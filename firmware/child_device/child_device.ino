@@ -8,13 +8,17 @@ int shakeCount = 0;
 bool isShaking = false;
 #define SHAKE_THRESHOLD 15000.0
 
-// ★ 各子機に異なるIDを割り当てる ★
-#define CHILD_ID 0  // 子機1は0、子機2は1、...、子機20は19
+#define CHILD_ID 0
+uint8_t parentMAC[] = {0x08, 0x3A, 0xF2, 0x52, 0x9E, 0x54};
 
-// 親機のMACアドレス
-uint8_t parentMAC[] = {0x08, 0x3A, 0xF2, 0x52, 0x9E, 0x54};  // ← 親機のMACに修正
+// ★ 親機からのコマンドを受信
+typedef struct {
+  int command;  // 0 = OFF, 1 = ON
+} CommandData;
 
-// 送信用のデータ構造体
+// ★ フリフリ計測のON/OFF フラグ
+bool shakeMeasurementEnabled = true;
+
 typedef struct {
   int childID;
   int shakeCount;
@@ -24,10 +28,23 @@ typedef struct {
 ShakeData shakeData;
 esp_now_peer_info_t peerInfo;
 
-// ★ 新しいシグネチャに対応したコールバック関数 ★
 void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
-  // Serial.print("Send status: ");
-  // Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail");
+  // 送信結果
+}
+
+// ★ コマンド受信コールバック
+void OnDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData, int len) {
+  CommandData receivedCommand;
+  memcpy(&receivedCommand, incomingData, sizeof(receivedCommand));
+  
+  if (receivedCommand.command == 0) {
+    shakeMeasurementEnabled = false;
+    Serial.println("Shake measurement: OFF");
+  } 
+  else if (receivedCommand.command == 1) {
+    shakeMeasurementEnabled = true;
+    Serial.println("Shake measurement: ON");
+  }
 }
 
 void setup() {
@@ -36,7 +53,6 @@ void setup() {
   
   Wire.begin(21, 22);
   
-  // WiFi STA モード設定
   WiFi.mode(WIFI_STA);
   delay(100);
   
@@ -45,21 +61,20 @@ void setup() {
   Serial.print(" MAC Address: ");
   Serial.println(WiFi.macAddress());
   
-  // MPU-6050初期化
   Wire.beginTransmission(MPU_addr);
   Wire.write(0x6B);
   Wire.write(0);
   Wire.endTransmission(true);
   
-  // ESP-NOW初期化
   if (esp_now_init() != ESP_OK) {
     Serial.println("ESP-NOW init failed");
     return;
   }
   
   esp_now_register_send_cb(OnDataSent);
+  // ★ コマンド受信コールバック登録
+  esp_now_register_recv_cb(OnDataRecv);
   
-  // 親機をピアとして登録
   memcpy(peerInfo.peer_addr, parentMAC, 6);
   peerInfo.channel = 0;
   peerInfo.encrypt = false;
@@ -87,27 +102,31 @@ void loop() {
                           pow((long)AcY, 2) +
                           pow((long)AcZ, 2));
   
-  if (totalAccel > SHAKE_THRESHOLD) {
-    if (!isShaking) {
-      isShaking = true;
-      shakeCount++;
-      
-      // ★ childIDを構造体に追加 ★
-      shakeData.childID = CHILD_ID;
-      shakeData.shakeCount = shakeCount;
-      shakeData.acceleration = totalAccel;
-      
-      // ESP-NOWで送信
-      esp_now_send(parentMAC, (uint8_t *) &shakeData, sizeof(shakeData));
-      
-      Serial.print("SHAKE! ID: ");
-      Serial.print(CHILD_ID);
-      Serial.print(" | Count: ");
-      Serial.print(shakeCount);
-      Serial.print(" | Accel: ");
-      Serial.println(totalAccel);
+  // ★ 計測がONの場合のみフリフリを検知
+  if (shakeMeasurementEnabled) {
+    if (totalAccel > SHAKE_THRESHOLD) {
+      if (!isShaking) {
+        isShaking = true;
+        shakeCount++;
+        
+        shakeData.childID = CHILD_ID;
+        shakeData.shakeCount = shakeCount;
+        shakeData.acceleration = totalAccel;
+        
+        esp_now_send(parentMAC, (uint8_t *) &shakeData, sizeof(shakeData));
+        
+        Serial.print("SHAKE! ID: ");
+        Serial.print(CHILD_ID);
+        Serial.print(" | Count: ");
+        Serial.print(shakeCount);
+        Serial.print(" | Accel: ");
+        Serial.println(totalAccel);
+      }
+    } else {
+      isShaking = false;
     }
   } else {
+    // OFFの場合は状態をリセット
     isShaking = false;
   }
   

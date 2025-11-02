@@ -3,74 +3,107 @@
 
 // 受信用のデータ構造体
 typedef struct {
-  int childID;          // 子機ID
+  int childID;
   int shakeCount;
   float acceleration;
 } ShakeData;
 
-// 複数子機のデータ保存（最大20台）
+// ★ ブロードキャスト用のコマンド構造体
+typedef struct {
+  int command;  // 0 = OFF, 1 = ON
+} CommandData;
+
 #define MAX_CHILDREN 20
 ShakeData childData[MAX_CHILDREN];
 
-// データ受信コールバック
+// ブロードキャストアドレス（全子機へ送信）
+uint8_t broadcastAddress[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
+esp_now_peer_info_t broadcastPeerInfo;
+int currentCommand = 1;  // デフォルト: ON
+
 void OnDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData, int len) {
   ShakeData receivedData;
   memcpy(&receivedData, incomingData, sizeof(receivedData));
   
-  // 子機IDに基づいてデータ保存
-   // ★ シリアルモニタに出力（デバッグ用）
-    Serial.print("Child #");
-    Serial.print(receivedData.childID);
-    Serial.print(" (");
-    for(int i = 0; i < 6; i++){
-      Serial.print(recv_info->src_addr[i], HEX);
-      if(i < 5) Serial.print(":");
-    }
-    Serial.print(") | Count: ");
-    Serial.print(receivedData.shakeCount);
-    Serial.print(" | Accel: ");
-    Serial.println(receivedData.acceleration);
+  if (receivedData.childID >= 0 && receivedData.childID < MAX_CHILDREN) {
+    childData[receivedData.childID] = receivedData;
     
-    // ★ CSV形式でPCに送信（Processing用）
+    // Processing用 CSV形式
     Serial.print(receivedData.childID);
     Serial.print(",");
     Serial.print(receivedData.shakeCount);
     Serial.print(",");
     Serial.println(receivedData.acceleration);
+  }
+}
+
+// データ送信コールバック
+void OnDataSent(const wifi_tx_info_t *tx_info, esp_now_send_status_t status) {
+  // Serial.print("Broadcast status: ");
+  // Serial.println(status == ESP_NOW_SEND_SUCCESS ? "Success" : "Fail");
+}
+
+void broadcastCommand(int command) {
+  CommandData commandData;
+  commandData.command = command;
+  
+  currentCommand = command;
+  
+  // 全子機にブロードキャスト
+  esp_now_send(broadcastAddress, (uint8_t *) &commandData, sizeof(commandData));
+  
+  // ★ Processing に状態を返信
+  Serial.print("CMD,");
+  Serial.println(command);  // 0=OFF, 1=ON
 }
 
 void setup() {
   Serial.begin(115200);
   delay(1000);
   
-  // WiFi STA モード設定
   WiFi.mode(WIFI_STA);
   delay(100);
   
   Serial.print("Parent MAC Address: ");
   Serial.println(WiFi.macAddress());
   
-  // ESP-NOW初期化
   if (esp_now_init() != ESP_OK) {
     Serial.println("ESP-NOW init failed");
     return;
   }
   
   esp_now_register_recv_cb(OnDataRecv);
+  esp_now_register_send_cb(OnDataSent);
+  
+  // ブロードキャストピアを登録
+  memcpy(broadcastPeerInfo.peer_addr, broadcastAddress, 6);
+  broadcastPeerInfo.channel = 0;
+  broadcastPeerInfo.encrypt = false;
+  
+  if (esp_now_add_peer(&broadcastPeerInfo) != ESP_OK) {
+    Serial.println("Failed to add broadcast peer");
+    return;
+  }
   
   Serial.println("ESP-NOW Parent Ready!");
-  Serial.println("Waiting for child devices...");
+  Serial.println("Waiting for commands from Processing...");
 }
 
 void loop() {
-  // 定期的に全子機のデータを表示（オプション）
-  delay(1000);
+  // Processing からのコマンド受信
+  if (Serial.available() > 0) {
+    String command = Serial.readStringUntil('\n');
+    command.trim();
+    
+    if (command == "ON") {
+      broadcastCommand(1);
+      Serial.println("DEBUG: Shake detection ON");
+    } 
+    else if (command == "OFF") {
+      broadcastCommand(0);
+      Serial.println("DEBUG: Shake detection OFF");
+    }
+  }
   
-  // 必要に応じて、ここで全子機のデータをPC（Processing）に送信
-  // Serial.print("DATA,");
-  // for(int i = 0; i < MAX_CHILDREN; i++) {
-  //   Serial.print(childData[i].shakeCount);
-  //   if(i < MAX_CHILDREN - 1) Serial.print(",");
-  // }
-  // Serial.println(",END");
+  delay(50);
 }

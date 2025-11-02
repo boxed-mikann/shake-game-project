@@ -8,6 +8,11 @@ String statusMessage = "Initializing...";
 int connectionAttempts = 0;
 final int MAX_CONNECTION_ATTEMPTS = 5;
 
+// ★ UI ボタン
+Button onButton;
+Button offButton;
+boolean shakeDetectionActive = true;
+
 class PlayerData {
   int id;
   int shakeCount;
@@ -20,15 +25,57 @@ class PlayerData {
   }
 }
 
+// ★ ボタンクラス
+class Button {
+  int x, y, w, h;
+  String label;
+  color bgColor, hoverColor;
+  boolean isHovered = false;
+  
+  Button(int x, int y, int w, int h, String label, color bgColor, color hoverColor) {
+    this.x = x;
+    this.y = y;
+    this.w = w;
+    this.h = h;
+    this.label = label;
+    this.bgColor = bgColor;
+    this.hoverColor = hoverColor;
+  }
+  
+  void display() {
+    // マウスホバー判定
+    isHovered = mouseX > x && mouseX < x + w && mouseY > y && mouseY < y + h;
+    
+    // ボタン描画
+    fill(isHovered ? hoverColor : bgColor);
+    stroke(0);
+    strokeWeight(2);
+    rect(x, y, w, h, 5);
+    
+    // ラベル
+    fill(255);
+    textSize(14);
+    textAlign(CENTER, CENTER);
+    text(label, x + w/2, y + h/2);
+  }
+  
+  boolean isClicked() {
+    return isHovered && mousePressed;
+  }
+}
+
 void setup() {
-  size(1200, 600);
+  size(1200, 650);
   
   // プレイヤーデータ初期化
   for (int i = 0; i < MAX_PLAYERS; i++) {
     players.add(new PlayerData(i));
   }
   
-  // 使用可能なシリアルポート一覧を表示
+  // ★ ボタン初期化
+  onButton = new Button(50, 60, 100, 40, "ON", color(0, 200, 0), color(0, 255, 0));
+  offButton = new Button(160, 60, 100, 40, "OFF", color(200, 0, 0), color(255, 0, 0));
+  
   println("=== Available Serial Ports ===");
   String[] ports = Serial.list();
   for (int i = 0; i < ports.length; i++) {
@@ -36,7 +83,6 @@ void setup() {
   }
   println("==============================");
   
-  // ポート接続試行
   connectToPort();
 }
 
@@ -49,12 +95,9 @@ void connectToPort() {
     return;
   }
   
-  // ユーザーが指定したポート（デフォルト: 最初のポート）
-  // ここを変更して別のポートを試すことができます
-  int portIndex = 0;  // ★ ここを変更: 0, 1, 2, ... など
+  int portIndex = 0;
   
   try {
-    // 既に接続しているポートがあれば閉じる
     if (myPort != null) {
       myPort.stop();
       delay(500);
@@ -83,10 +126,6 @@ void connectToPort() {
     } else {
       statusMessage = "ERROR: Could not connect after " + MAX_CONNECTION_ATTEMPTS + " attempts";
       println(statusMessage);
-      println("Please check:");
-      println("1. Arduino IDE のシリアルモニタが閉じているか");
-      println("2. 親機が USB で接続されているか");
-      println("3. ボーレートが 115200 に設定されているか");
     }
   }
 }
@@ -94,26 +133,46 @@ void connectToPort() {
 void draw() {
   background(240);
   
+  // ★ ボタン表示
+  onButton.display();
+  offButton.display();
+  
+  // ボタンクリック判定
+  if (onButton.isClicked()) {
+    sendCommand("ON");
+    shakeDetectionActive = true;
+    delay(200);  // チャタリング防止
+  }
+  if (offButton.isClicked()) {
+    sendCommand("OFF");
+    shakeDetectionActive = false;
+    delay(200);
+  }
+  
   // ヘッダー
   fill(0);
   textSize(24);
   textAlign(LEFT);
-  text("Shake Game - Real-time Display", 20, 30);
+  text("Shake Game - Real-time Display", 350, 80);
   
   // ステータス表示
   fill(100);
   textSize(12);
   textAlign(LEFT);
   if (portConnected) {
-    fill(0, 150, 0);  // 緑
-    text("● " + statusMessage, 20, 50);
+    fill(0, 150, 0);
+    text("● " + statusMessage, 350, 100);
   } else {
-    fill(200, 0, 0);  // 赤
-    text("● " + statusMessage, 20, 50);
+    fill(200, 0, 0);
+    text("● " + statusMessage, 350, 100);
   }
   
+  // ★ 計測状態表示
+  textSize(14);
+  fill(shakeDetectionActive ? color(0, 150, 0) : color(150, 0, 0));
+  text("Detection: " + (shakeDetectionActive ? "ON" : "OFF"), 350, 125);
+  
   if (!portConnected) {
-    // ポート未接続時の表示
     fill(200, 0, 0);
     textSize(16);
     textAlign(CENTER);
@@ -126,41 +185,48 @@ void draw() {
   int cols = 10;
   int rows = 2;
   int boxWidth = width / cols;
-  int boxHeight = (height - 80) / rows;
+  int boxHeight = (height - 140) / rows;
   
   for (int i = 0; i < MAX_PLAYERS; i++) {
     int row = i / cols;
     int col = i % cols;
     
     int x = col * boxWidth;
-    int y = 70 + row * boxHeight;
+    int y = 140 + row * boxHeight;
     
     drawPlayerBox(x, y, boxWidth, boxHeight, players.get(i));
   }
 }
 
 void drawPlayerBox(int x, int y, int w, int h, PlayerData player) {
-  // 背景
   stroke(100);
   fill(255);
   rect(x + 5, y + 5, w - 10, h - 10);
   
-  // プレイヤーID
   fill(0);
   textSize(14);
   textAlign(LEFT);
   text("Player #" + player.id, x + 10, y + 20);
   
-  // スコア（緑）
   fill(0, 200, 0);
   textSize(16);
   textAlign(CENTER);
   text("Count: " + player.shakeCount, x + w/2, y + h/2);
   
-  // 加速度（灰色）
   fill(150);
   textSize(12);
   text("Accel: " + nf(player.acceleration, 0, 1), x + w/2, y + h - 15);
+}
+
+// ★ コマンド送信関数
+void sendCommand(String command) {
+  if (!portConnected) {
+    println("Port not connected!");
+    return;
+  }
+  
+  myPort.write(command + "\n");
+  println("Sent command: " + command);
 }
 
 void serialEvent(Serial myPort) {
@@ -172,9 +238,15 @@ void serialEvent(Serial myPort) {
     if (inString != null) {
       inString = trim(inString);
       
-      // ★ デバッグ行を無視
-      if (inString.startsWith("Child #") || inString.startsWith("[DEBUG]")) {
-        return;  // この行をスキップ
+      // デバッグ行を無視
+      if (inString.startsWith("Child #") || inString.startsWith("DEBUG") || inString.startsWith("Shake") || inString.startsWith("ESP-NOW")) {
+        return;
+      }
+      
+      // ★ コマンド応答を処理
+      if (inString.startsWith("CMD")) {
+        println("Command response received: " + inString);
+        return;
       }
       
       // CSV形式のデータ処理
@@ -203,7 +275,6 @@ void serialEvent(Serial myPort) {
 }
 
 void keyPressed() {
-  // キーボード操作でポート再接続（'R'キー）
   if (key == 'r' || key == 'R') {
     println("Reconnecting...");
     connectionAttempts = 0;
