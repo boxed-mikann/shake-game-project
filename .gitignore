@@ -1,0 +1,22 @@
+# Arduino IDE
+.vscode/
+.settings/
+*.elf
+*.bin
+build/
+
+# OS
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+
+# IDE
+*.code-workspace
+.idea/
+
+# Build artifacts
+*.o
+*.a
+*.so
