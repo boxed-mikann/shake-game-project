@@ -18,9 +18,7 @@ void OnDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData,
   memcpy(&receivedData, incomingData, sizeof(receivedData));
   
   // 子機IDに基づいてデータ保存
-  if (receivedData.childID >= 0 && receivedData.childID < MAX_CHILDREN) {
-    childData[receivedData.childID] = receivedData;
-    
+   // ★ シリアルモニタに出力（デバッグ用）
     Serial.print("Child #");
     Serial.print(receivedData.childID);
     Serial.print(" (");
@@ -32,7 +30,13 @@ void OnDataRecv(const esp_now_recv_info *recv_info, const uint8_t *incomingData,
     Serial.print(receivedData.shakeCount);
     Serial.print(" | Accel: ");
     Serial.println(receivedData.acceleration);
-  }
+    
+    // ★ CSV形式でPCに送信（Processing用）
+    Serial.print(receivedData.childID);
+    Serial.print(",");
+    Serial.print(receivedData.shakeCount);
+    Serial.print(",");
+    Serial.println(receivedData.acceleration);
 }
 
 void setup() {

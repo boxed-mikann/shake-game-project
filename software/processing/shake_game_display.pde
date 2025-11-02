@@ -172,10 +172,12 @@ void serialEvent(Serial myPort) {
     if (inString != null) {
       inString = trim(inString);
       
-      // デバッグ: 受信データを表示
-      // println("Received: " + inString);
+      // ★ デバッグ行を無視
+      if (inString.startsWith("Child #") || inString.startsWith("[DEBUG]")) {
+        return;  // この行をスキップ
+      }
       
-      // データ形式: "CHILD_ID,shakeCount,acceleration"
+      // CSV形式のデータ処理
       String[] parts = split(inString, ',');
       
       if (parts.length >= 3) {
@@ -190,7 +192,6 @@ void serialEvent(Serial myPort) {
           }
         } catch (Exception e) {
           println("Parse error: " + inString);
-          println("Error details: " + e.getMessage());
         }
       }
     }
