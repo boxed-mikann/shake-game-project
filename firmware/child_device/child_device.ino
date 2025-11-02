@@ -6,10 +6,16 @@ const int MPU_addr = 0x68;
 int16_t AcX, AcY, AcZ;
 int shakeCount = 0;
 bool isShaking = false;
-#define SHAKE_THRESHOLD 15000.0
 
 #define CHILD_ID 0
 uint8_t parentMAC[] = {0x08, 0x3A, 0xF2, 0x52, 0x9E, 0x54};
+
+// ★ ジャーク検知用のパラメータ
+float previousAccel = 0;
+const float JERK_THRESHOLD = 20000.0;      // ジャーク（加速度の変化率）の閾値
+const int DEBOUNCE_TIME = 0;            // デバウンス時間（ms）
+unsigned long lastShakeTime = 0;
+bool initialized = false;                 // ★ 初期化フラグ
 
 // ★ 親機からのコマンドを受信
 typedef struct {
@@ -60,6 +66,11 @@ void setup() {
   Serial.print(CHILD_ID);
   Serial.print(" MAC Address: ");
   Serial.println(WiFi.macAddress());
+  Serial.println("=== Jerk-based Shake Detection ===");
+  Serial.print("JERK_THRESHOLD: ");
+  Serial.println(JERK_THRESHOLD);
+  Serial.print("DEBOUNCE_TIME: ");
+  Serial.println(DEBOUNCE_TIME);
   
   Wire.beginTransmission(MPU_addr);
   Wire.write(0x6B);
@@ -72,7 +83,6 @@ void setup() {
   }
   
   esp_now_register_send_cb(OnDataSent);
-  // ★ コマンド受信コールバック登録
   esp_now_register_recv_cb(OnDataRecv);
   
   memcpy(peerInfo.peer_addr, parentMAC, 6);
@@ -98,37 +108,68 @@ void loop() {
   AcY = Wire.read() << 8 | Wire.read();
   AcZ = Wire.read() << 8 | Wire.read();
   
-  float totalAccel = sqrt(pow((long)AcX, 2) +
-                          pow((long)AcY, 2) +
-                          pow((long)AcZ, 2));
+  // 合成加速度を計算
+  float currentAccel = sqrt(pow((long)AcX, 2) +
+                            pow((long)AcY, 2) +
+                            pow((long)AcZ, 2));
   
-  // ★ 計測がONの場合のみフリフリを検知
+  // ★ 改善版：ジャーク検知 + デバウンス
   if (shakeMeasurementEnabled) {
-    if (totalAccel > SHAKE_THRESHOLD) {
-      if (!isShaking) {
+    // ★ 初期化時の誤検知を防ぐ
+    if (!initialized) {
+      previousAccel = currentAccel;
+      initialized = true;
+      Serial.print("Initialized with Accel: ");
+      Serial.println(currentAccel);
+    }
+    
+    // ジャーク（加速度の変化率）を計算
+    float jerk = abs(currentAccel - previousAccel);
+    
+    // ★ デバッグ用：全ジャーク値を出力
+    Serial.print("Accel: ");
+    Serial.print(currentAccel, 0);
+    Serial.print(" | Jerk: ");
+    Serial.print(jerk, 0);
+    Serial.print(" | isShaking: ");
+    Serial.println(isShaking);
+    
+    // ジャーク検知 + デバウンス
+    if (jerk > JERK_THRESHOLD && !isShaking) {
+      // ★ デバウンス時間をチェック（0の場合はスキップ）
+      if (DEBOUNCE_TIME == 0 || millis() - lastShakeTime > DEBOUNCE_TIME) {
         isShaking = true;
         shakeCount++;
+        lastShakeTime = millis();
         
         shakeData.childID = CHILD_ID;
         shakeData.shakeCount = shakeCount;
-        shakeData.acceleration = totalAccel;
+        shakeData.acceleration = currentAccel;
         
         esp_now_send(parentMAC, (uint8_t *) &shakeData, sizeof(shakeData));
         
-        Serial.print("SHAKE! ID: ");
+        Serial.print(">>> SHAKE! ID: ");
         Serial.print(CHILD_ID);
         Serial.print(" | Count: ");
         Serial.print(shakeCount);
-        Serial.print(" | Accel: ");
-        Serial.println(totalAccel);
+        Serial.print(" | Jerk: ");
+        Serial.println(jerk);
       }
-    } else {
+    }
+    
+    // ★ 改善版リセット条件：加速度が低下したら検知完了状態に戻す
+    // CSVデータから、フリフリ後は加速度が30000未満に戻る
+    if (isShaking && currentAccel < 30000.0) {
       isShaking = false;
+      Serial.println("Reset shake state");
     }
   } else {
     // OFFの場合は状態をリセット
     isShaking = false;
   }
+  
+  // ★ 前フレームの加速度を保存
+  previousAccel = currentAccel;
   
   delay(50);
 }
