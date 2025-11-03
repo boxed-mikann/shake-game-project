@@ -1,1 +1,2 @@
-.windows-amd64/
+# shake_game_battle/windows-amd64 を管理対象から除外（ファイルが多すぎるため）
+/windows-amd64/

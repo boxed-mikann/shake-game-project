@@ -1,4 +1,5 @@
 import processing.serial.*;
+import processing.video.*;
 import ddf.minim.*;
 import ddf.minim.ugens.*;
 
@@ -27,16 +28,22 @@ final float GOAL_GAUGE = 100.0;
 
 // ゲージ計算パラメータ
 final float ACCEL_THRESHOLD = 5000;
-final float GAUGE_COEFFICIENT = 0.00005;  // Accel値に掛ける係数
+final float GAUGE_COEFFICIENT = 0.005;
 
 // フェーズ変更通知
 int phaseNotificationTime = 0;
-final int PHASE_NOTIFICATION_DURATION = 1500;  // 1.5秒表示
+final int PHASE_NOTIFICATION_DURATION = 1500;
 
 // 勝利表示
 int winTeam = -1;
 int winStartTime = 0;
-final int WIN_SCREEN_DURATION = 5000;  // 5秒表示
+final int WIN_SCREEN_DURATION = 5000;
+
+// ★ ビデオ関連
+Movie gameplayVideo;
+Movie victoryVideo;
+boolean videosLoaded = false;
+String videoErrorMessage = "";
 
 // ★ Minim オーディオ
 Minim minim;
@@ -65,6 +72,9 @@ void setup() {
   minim = new Minim(this);
   out = minim.getLineOut();
   
+  // ★ ビデオ読み込み
+  loadVideos();
+  
   // フォント設定（メイリオ）
   PFont meiryoFont = createFont("Meiryo", 16);
   textFont(meiryoFont);
@@ -82,6 +92,43 @@ void setup() {
   }
   
   connectToPort();
+}
+
+// ★ ビデオ読み込み関数
+void loadVideos() {
+  try {
+    // プレイ中の動画
+    if (new File(dataPath("gameplay.mp4")).exists()) {
+      gameplayVideo = new Movie(this, "gameplay.mp4");
+      gameplayVideo.loop();
+      println("gameplay.mp4 loaded");
+    } else {
+      videoErrorMessage += "gameplay.mp4 not found! ";
+      println("WARNING: gameplay.mp4 not found in data folder");
+    }
+    
+    // 勝利時の動画
+    if (new File(dataPath("victory.mp4")).exists()) {
+      victoryVideo = new Movie(this, "victory.mp4");
+      println("victory.mp4 loaded");
+    } else {
+      videoErrorMessage += "victory.mp4 not found! ";
+      println("WARNING: victory.mp4 not found in data folder");
+    }
+    
+    if (gameplayVideo != null && victoryVideo != null) {
+      videosLoaded = true;
+      println("All videos loaded successfully");
+    }
+  } catch (Exception e) {
+    videoErrorMessage = "Video load error: " + e.getMessage();
+    println(videoErrorMessage);
+  }
+}
+
+// ★ ビデオフレーム更新コールバック
+void movieEvent(Movie m) {
+  m.read();
 }
 
 void connectToPort() {
@@ -128,7 +175,6 @@ void connectToPort() {
 }
 
 void draw() {
-  // 背景
   background(10, 15, 30);
   
   if (!portConnected) {
@@ -139,8 +185,12 @@ void draw() {
   // ゲーム状態管理
   updateGameState();
   
-  // 背景グラデーション
-  drawGameBackground();
+  // ★ 背景ビデオ描画（最背面）
+  if (videosLoaded && gameplayVideo != null && gameState == STATE_PLAYING) {
+    drawGameplayVideo();
+  } else {
+    drawGameBackground();
+  }
   
   // ゲージ描画
   drawGauges();
@@ -163,6 +213,27 @@ void draw() {
   }
 }
 
+// ★ プレイ中ビデオ描画
+// ★ V11 の drawGameplayVideo() を置き換え
+
+void drawGameplayVideo() {
+  // フレームを読む（毎フレーム）
+  if (gameplayVideo.available()) {
+    gameplayVideo.read();
+  }
+  
+  // ★ 最適化：スケール描画（set() より高速）
+  pushMatrix();
+  imageMode(CORNER);
+  image(gameplayVideo, 0, 0, width, height);
+  popMatrix();
+  
+  // グラデーション暗転
+  fill(0, 0, 0, 80);
+  rect(0, 0, width, height);
+}
+
+
 void updateGameState() {
   if (gameState != STATE_PLAYING) return;
   
@@ -179,12 +250,24 @@ void updateGameState() {
     winStartTime = millis();
     println("チームAが勝利!");
     playWinSound();
+    
+    // ★ 勝利動画開始
+    if (videosLoaded && victoryVideo != null) {
+      victoryVideo.play();
+      victoryVideo.jump(0);
+    }
   } else if (teamGauge[1] >= GOAL_GAUGE) {
     gameState = STATE_WIN;
     winTeam = 1;
     winStartTime = millis();
     println("チームBが勝利!");
     playWinSound();
+    
+    // ★ 勝利動画開始
+    if (videosLoaded && victoryVideo != null) {
+      victoryVideo.play();
+      victoryVideo.jump(0);
+    }
   }
 }
 
@@ -369,15 +452,35 @@ void drawStatus() {
     fill(200, 0, 0);
     text("ステータス: " + statusMessage, 10, 20);
   }
+  
+  // ★ ビデオロード状態表示
+  if (!videosLoaded && videoErrorMessage.length() > 0) {
+    fill(255, 150, 0);
+    text("警告: " + videoErrorMessage, 10, 35);
+  } else if (videosLoaded) {
+    fill(0, 200, 0);
+    text("動画: OK", 10, 35);
+  }
 }
 
+// ★ 勝利画面（ビデオ背景付き）
 void drawWinScreen() {
   float elapsedWinTime = millis() - winStartTime;
   
-  float bgAlpha = map(elapsedWinTime, 0, 1000, 0, 220);
+  // ★ 勝利ビデオを背景として表示
+  if (videosLoaded && victoryVideo != null) {
+    if (victoryVideo.available()) {
+      victoryVideo.read();
+    }
+    image(victoryVideo, 0, 0, width, height);
+  }
+  
+  // フェード背景
+  float bgAlpha = map(elapsedWinTime, 0, 1000, 0, 180);
   fill(0, 0, 0, bgAlpha);
   rect(0, 0, width, height);
   
+  // メインテキスト
   float textAlpha = map(elapsedWinTime, 0, 500, 0, 255);
   PFont meiryoFont = createFont("Meiryo", 96);
   textFont(meiryoFont);
@@ -410,6 +513,11 @@ void resetGame() {
   currentPhase = PHASE_CHARGE;
   phaseStartTime = millis();
   phaseNotificationTime = millis();
+  
+  // ★ 勝利動画を停止
+  if (videosLoaded && victoryVideo != null) {
+    victoryVideo.stop();
+  }
 }
 
 void serialEvent(Serial myPort) {
@@ -459,7 +567,6 @@ void serialEvent(Serial myPort) {
               
               println("チーム" + (teamID == 0 ? "A" : "B") + " - Accel: " + acceleration + " - Gauge増加: " + gaugeIncrease);
               
-              // ★ 効果音再生
               if (currentPhase == PHASE_CHARGE) {
                 playCoinSound();
               } else {
@@ -482,17 +589,15 @@ void serialEvent(Serial myPort) {
   }
 }
 
-// ★ Minim で効果音生成
+// オーディオ生成関数
 void playCoinSound() {
   thread("playCoinSoundThread");
 }
 
 void playCoinSoundThread() {
   try {
-    // 600Hzの音（80ms）
     playToneWithMinim(600, 80);
     delay(50);
-    // 1000Hzの音（120ms）
     playToneWithMinim(1000, 120);
   } catch (Exception e) {
   }
@@ -526,7 +631,6 @@ void playWinSoundThread() {
   }
 }
 
-// ★ 周波数と長さを指定してサイン波を生成
 void playToneWithMinim(float frequency, int duration) {
   Oscillator osc = new Oscillator(frequency, 0.3, Oscillator.SINE);
   osc.patch(out);
@@ -536,7 +640,6 @@ void playToneWithMinim(float frequency, int duration) {
   osc.unpatch(out);
 }
 
-// ★ 簡単なオシレータクラス
 class Oscillator extends UGen {
   float frequency;
   float amplitude;
