@@ -79,6 +79,8 @@ docs/            # ドキュメント
 - [システム設計](./docs/system_design.md)
 - [ハードウェア配線](./hardware/wiring_diagram.md)
 - [トラブルシューティング](./docs/troubleshooting.md)
+  
+注：ドキュメントはAI生成のため、未検証事項が多分に含まれています。(誤検知何％カットとか)
 
 ## 🎮 現在の進捗
 
