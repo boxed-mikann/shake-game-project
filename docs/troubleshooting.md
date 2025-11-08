@@ -127,6 +127,93 @@ Tools → Manage Libraries → "esp_now" と "Wire" をインストール
    myPort = new Serial(this, portName, 115200);
    ```
 
+### I2C通信関連 ⭐ NEW
+
+#### Q: I2C NACK エラーが出る
+
+**症状:** 
+```
+E (11528) i2c.master: I2C hardware NACK detected
+E (11528) i2c.master: I2C transaction unexpected nack detected
+E (11528) i2c.master: s_i2c_synchronous_transaction(945): I2C transaction failed
+```
+
+**原因:**
+- SDA/SCL のピン設定が配線と一致していない
+- プルアップ抵抗が不足（I2C通信には10kΩのプルアップが必要）
+- 配線が緩んでいる、または接触不良
+
+**解決方法:**
+1. **ピン設定を確認**（wiring_diagram.md参照）
+   ```cpp
+   // 正しい設定（SDA: GPIO 23, SCL: GPIO 22）
+   Wire.begin(23, 22);  // (SDA, SCL)
+   ```
+
+2. **プルアップ抵抗を追加**
+   - SDA と SCL それぞれに 10kΩ の抵抗を追加
+   - 抵抗をGNDと3.3Vの間に接続
+   ```
+   3.3V
+    ↓
+   10kΩ (or 4.7kΩ)
+    ↓
+   SDA ─→ ESP32 GPIO 23
+    
+   3.3V
+    ↓
+   10kΩ (or 4.7kΩ)
+    ↓
+   SCL ─→ ESP32 GPIO 22
+   ```
+
+3. **配線を再確認**
+   - 接点がしっかり接触しているか
+   - はんだ付けが正しくできているか（特にGND）
+
+4. **I2C通信速度を調整**（必要に応じて）
+   ```cpp
+   Wire.begin(23, 22);
+   Wire.setClock(400000);  // 400kHz (標準値)
+   // または低い速度で試す
+   Wire.setClock(100000);  // 100kHz
+   ```
+
+### LED制御関連 ⭐ NEW
+
+#### Q: LEDが点灯しない
+
+**症状:** フリフリしてもLEDが光らない
+
+**原因:**
+- LEDの接続不良
+- GPIO 13 の設定ミス
+- LED のアノード/カソード接続が逆
+
+**解決方法:**
+1. **配線を確認**
+   - GPIO 13 にアノード（長い足）を接続
+   - GND にカソード（短い足）を接続
+   - 抵抗（220Ω程度）を直列に接続
+
+2. **コードの確認**
+   ```cpp
+   const int LED_PIN = 13;
+   pinMode(LED_PIN, OUTPUT);
+   digitalWrite(LED_PIN, HIGH);   // 点灯
+   digitalWrite(LED_PIN, LOW);    // 消灯
+   ```
+
+3. **テストコード**
+   ```cpp
+   // setup() 内
+   pinMode(LED_PIN, OUTPUT);
+   
+   // loop() 内で常に点灯テスト
+   digitalWrite(LED_PIN, HIGH);
+   delay(1000);
+   ```
+
 ## サポート
 
 上記で解決しない場合は、GitHub の Issues でお問い合わせください。

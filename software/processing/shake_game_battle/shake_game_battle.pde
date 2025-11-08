@@ -28,7 +28,7 @@ final float GOAL_GAUGE = 100.0;
 
 // ゲージ計算パラメータ
 final float ACCEL_THRESHOLD = 5000;
-final float GAUGE_COEFFICIENT = 0.005;
+final float GAUGE_COEFFICIENT = 0.00005;
 
 // フェーズ変更通知
 int phaseNotificationTime = 0;

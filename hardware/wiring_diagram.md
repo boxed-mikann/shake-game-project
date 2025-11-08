@@ -12,10 +12,11 @@ USB PC ─→ Micro USB ─→ ESP32 Dev Board
 
 ```
 ESP32 Dev Board
-├─ GPIO 21 (SDA) ─→ MPU-6050 SDA
+├─ GPIO 23 (SDA) ─→ MPU-6050 SDA
 ├─ GPIO 22 (SCL) ─→ MPU-6050 SCL
 ├─ GND ─────────→ MPU-6050 GND
 ├─ 3.3V ────────→ MPU-6050 VCC
+├─ D13 ────────→ LEDライト
 └─ Micro USB (DC Power)
 ```
 
@@ -26,7 +27,7 @@ MPU-6050 (GY-521)
 ├─ VCC: 3.3V
 ├─ GND: GND
 ├─ SCL: GPIO 22
-├─ SDA: GPIO 21
+├─ SDA: GPIO 23
 ├─ AD0: GND (I2C Address 0x68)
 └─ INT: 未使用
 ```
@@ -44,8 +45,3 @@ MPU-6050 (GY-521)
 ↓ (USB Serial)
 PC (Processing 表示)
 ```
-
-## 注意事項(AI生成,未調査)
-
-- ESP32のGPIO 21, 22 は I2C 用に予約されています
-- I2C Address は MPU-6050 の AD0 ピンで変更できます（GND=0x68, VCC=0x69）

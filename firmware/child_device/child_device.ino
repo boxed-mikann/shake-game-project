@@ -3,6 +3,7 @@
 #include <WiFi.h>
 
 const int MPU_addr = 0x68;
+const int LED_PIN = 13;  // ★ LED制御用GPIO 13
 int16_t AcX, AcY, AcZ;
 int shakeCount = 0;
 bool isShaking = false;
@@ -57,7 +58,14 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   
-  Wire.begin(21, 22);
+  // ★ LED ピン設定
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW);  // 初期状態は消灯
+  
+  // ★ I2C初期化（プルアップ設定付き）
+  // SDA: GPIO 23, SCL: GPIO 22 (wiring_diagram.md参照)
+  Wire.begin(23, 22);
+  Wire.setClock(400000);  // I2Cクロック速度を400kHzに設定
   
   WiFi.mode(WIFI_STA);
   delay(100);
@@ -127,12 +135,12 @@ void loop() {
     float jerk = abs(currentAccel - previousAccel);
     
     // ★ デバッグ用：全ジャーク値を出力
-    Serial.print("Accel: ");
-    Serial.print(currentAccel, 0);
-    Serial.print(" | Jerk: ");
-    Serial.print(jerk, 0);
-    Serial.print(" | isShaking: ");
-    Serial.println(isShaking);
+    //Serial.print("Accel: ");
+    //Serial.print(currentAccel, 0);
+    //Serial.print(" | Jerk: ");
+    //Serial.print(jerk, 0);
+    //Serial.print(" | isShaking: ");
+    //Serial.println(isShaking);
     
     // ジャーク検知 + デバウンス
     if (jerk > JERK_THRESHOLD && !isShaking) {
@@ -141,6 +149,9 @@ void loop() {
         isShaking = true;
         shakeCount++;
         lastShakeTime = millis();
+        
+        // ★ LEDを点灯
+        digitalWrite(LED_PIN, HIGH);
         
         shakeData.childID = CHILD_ID;
         shakeData.shakeCount = shakeCount;
@@ -161,11 +172,15 @@ void loop() {
     // CSVデータから、フリフリ後は加速度が30000未満に戻る
     if (isShaking && currentAccel < 30000.0) {
       isShaking = false;
+      // ★ LEDを消灯
+      digitalWrite(LED_PIN, LOW);
       Serial.println("Reset shake state");
     }
   } else {
     // OFFの場合は状態をリセット
     isShaking = false;
+    // ★ LEDを消灯
+    digitalWrite(LED_PIN, LOW);
   }
   
   // ★ 前フレームの加速度を保存

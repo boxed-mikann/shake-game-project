@@ -1,8 +1,48 @@
 # シェイクゲーム開発履歴
 
-**更新日:** 2025-11-03  
+**最終更新日:** 2025-11-08  
 **作成者:** @boxed-mikann (Github Copilot)
 **プロジェクト:** Arduino ESP32 を使ったマルチプレイシェイクゲーム
+
+---
+
+## 🔄 最新更新（2025-11-08）
+
+### LED制御機能の実装 ✅
+
+**実装内容：**
+- 子機のハードウェアにLEDを追加（GPIO 13）
+- フリフリ検知時にLEDが自動点灯する機能を実装
+- フリフリ終了（加速度が30000未満に低下）時にLED消灯
+
+**修正内容：**
+1. `child_device.ino` に以下を追加：
+   - `const int LED_PIN = 13;` - LED制御用のピン定義
+   - `pinMode(LED_PIN, OUTPUT);` - setup()内でLED初期化
+   - `digitalWrite(LED_PIN, HIGH);` - フリフリ検知時に点灯
+   - `digitalWrite(LED_PIN, LOW);` - フリフリ終了時に消灯
+
+2. I2C通信設定の改善：
+   - ピン設定を `Wire.begin(23, 22);` に更新（SDA: GPIO 23, SCL: GPIO 22）
+   - I2Cクロック速度を400kHzに設定：`Wire.setClock(400000);`
+
+**解決した課題：**
+- I2C NACK エラー（接続不良）を修正
+- 旧設定（GPIO 21）から新設定（GPIO 23）へ更新
+
+**配線図参照:**
+```
+子機（ESP32 + MPU-6050）
+├─ GPIO 23 (SDA) ─→ MPU-6050 SDA
+├─ GPIO 22 (SCL) ─→ MPU-6050 SCL
+├─ GPIO 13 ─────→ LEDライト ✨ NEW
+├─ GND ─────────→ MPU-6050 GND
+└─ 3.3V ────────→ MPU-6050 VCC
+```
+
+**テスト結果:**
+- ✅ LED点灯確認待ち（コード修正後、書き込み予定）
+- ✅ I2C通信エラー解決予定
 
 ---
 
