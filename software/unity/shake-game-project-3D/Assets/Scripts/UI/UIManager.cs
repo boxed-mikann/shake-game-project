@@ -27,6 +27,9 @@ public class UIManager : MonoBehaviour
     }
 
     // ===== UI References (Inspector) =====
+    [SerializeField] private CanvasGroup _titleScreenCanvasGroup;
+    [SerializeField] private GameObject _gamePlayScreenCanvasGroup;
+    [SerializeField] private Button _startButton;
     [SerializeField] private Slider _hpBarSlider;
     [SerializeField] private TextMeshProUGUI _timerText;
     [SerializeField] private Slider _beatSlider;
@@ -64,14 +67,24 @@ public class UIManager : MonoBehaviour
             GameManager.Instance.OnBossDamage += OnBossDamage;
         }
         
+        // スタートボタンの登録
+        if (_startButton != null)
+        {
+            _startButton.onClick.AddListener(OnStartButtonClicked);
+        }
+        
         // リトライボタンの登録
         if (_retryButton != null)
         {
             _retryButton.onClick.AddListener(OnRetryClicked);
         }
-        
+        //ゲームプレイ画面を非表示
+        HideGamePlayScreen();
         // 結果画面を非表示
         HideResultScreen();
+        
+        // タイトル画面を表示
+        ShowTitleScreen();
         
         if (GameConstants.DEBUG_MODE)
         {
@@ -128,13 +141,22 @@ public class UIManager : MonoBehaviour
     /// </summary>
     private void OnGameStateChanged(GameState newState)
     {
-        if (newState == GameState.Result)
+        if (newState == GameState.Title)
         {
-            ShowResultScreen();
-        }
-        else if (newState == GameState.Title)
-        {
+            ShowTitleScreen();
             HideResultScreen();
+            HideGamePlayScreen();
+        }
+        else if (newState == GameState.Running)
+        {
+            HideTitleScreen();
+            HideResultScreen();
+            ShowGamePlayScreen();
+        }
+        else if (newState == GameState.Result)
+        {
+            HideTitleScreen();
+            ShowResultScreen();
         }
     }
     
@@ -206,6 +228,34 @@ public class UIManager : MonoBehaviour
             _resultScreenCanvasGroup.blocksRaycasts = false;
         }
     }
+
+    /// <summary>
+    /// 結果画面を表示
+    /// </summary>
+    private void ShowGamePlayScreen()
+    {
+        if (_gamePlayScreenCanvasGroup != null)
+        {
+            _gamePlayScreenCanvasGroup.SetActive(true);
+            //_gamePlayScreenCanvasGroup.alpha = 1f;
+            //_gamePlayScreenCanvasGroup.interactable = true;
+            //_gamePlayScreenCanvasGroup.blocksRaycasts = true;
+        }
+    }
+    
+    /// <summary>
+    /// ゲームプレイ画面を非表示
+    /// </summary>
+    private void HideGamePlayScreen()
+    {
+        if (_gamePlayScreenCanvasGroup != null)
+        {
+            _gamePlayScreenCanvasGroup.SetActive(false);
+            //_gamePlayScreenCanvasGroup.alpha = 0f;
+            //_gamePlayScreenCanvasGroup.interactable = false;
+            //_gamePlayScreenCanvasGroup.blocksRaycasts = false;
+        }
+    }
     
     private void OnRetryClicked()
     {
@@ -224,4 +274,53 @@ public class UIManager : MonoBehaviour
             Debug.Log("[UIManager] Reset");
         }
     }
+    
+    /// <summary>
+    /// タイトル画面を表示
+    /// </summary>
+    private void ShowTitleScreen()
+    {
+        if (_titleScreenCanvasGroup != null)
+        {
+            _titleScreenCanvasGroup.alpha = 1f;
+            _titleScreenCanvasGroup.interactable = true;
+            _titleScreenCanvasGroup.blocksRaycasts = true;
+        }
+        
+        if (GameConstants.DEBUG_MODE)
+        {
+            Debug.Log("[UIManager] ShowTitleScreen");
+        }
+    }
+    
+    /// <summary>
+    /// タイトル画面を非表示
+    /// </summary>
+    private void HideTitleScreen()
+    {
+        if (_titleScreenCanvasGroup != null)
+        {
+            _titleScreenCanvasGroup.alpha = 0f;
+            _titleScreenCanvasGroup.interactable = false;
+            _titleScreenCanvasGroup.blocksRaycasts = false;
+        }
+        
+        if (GameConstants.DEBUG_MODE)
+        {
+            Debug.Log("[UIManager] HideTitleScreen");
+        }
+    }
+    
+    /// <summary>
+    /// スタートボタンが押された
+    /// </summary>
+    private void OnStartButtonClicked()
+    {
+        if (GameConstants.DEBUG_MODE)
+        {
+            Debug.Log("[UIManager] StartButton clicked");
+        }
+        GameManager.Instance.StartGame();
+    }
 }
+
