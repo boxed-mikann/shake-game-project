@@ -28,7 +28,7 @@ public static class GameConstants
     public const int MAX_PLAYERS = 10;                   // 最大プレイヤー数
     
     // ===== SerialPort通信 =====
-    public const string SERIAL_PORT_NAME = "COM5";      // デフォルトCOMポート（設定画面で変更可）
+    public const string SERIAL_PORT_NAME = "COM3";      // デフォルトCOMポート（設定画面で変更可）
     public const int SERIAL_BAUD_RATE = 115200;         // ボーレート
     public const string SERIAL_LINE_ENDING = "\n";      // 行末文字
     

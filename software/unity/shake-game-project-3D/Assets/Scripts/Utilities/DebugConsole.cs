@@ -1,25 +1,29 @@
 using UnityEngine;
-using UnityEngine.UI;
+using TMPro;
 
 /// <summary>
 /// デバッグ用コンソール表示
 /// </summary>
 public class DebugConsole : MonoBehaviour
 {
-    [SerializeField] private Text _debugText;
-    [SerializeField] private bool _showDebugInfo = GameConstants.DEBUG_MODE;
+    [SerializeField] private TextMeshProUGUI _debugText;
     
     private string _debugInfo = "";
     
     private void Start()
     {
-        if (!_showDebugInfo)
+        // DebugText を自動検索
+        if (_debugText == null)
         {
-            gameObject.SetActive(false);
-            return;
+            _debugText = GetComponentInChildren<TextMeshProUGUI>();
         }
         
         GameManager.Instance.OnGameTick += UpdateDebugInfo;
+        
+        if (GameConstants.DEBUG_MODE)
+        {
+            Debug.Log("[DebugConsole] Initialized");
+        }
     }
     
     private void UpdateDebugInfo(float elapsedTime)

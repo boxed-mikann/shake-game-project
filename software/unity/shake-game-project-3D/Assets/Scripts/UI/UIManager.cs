@@ -1,4 +1,6 @@
 using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
 
 /// <summary>
 /// UI全体を管理するマネージャー
@@ -24,12 +26,17 @@ public class UIManager : MonoBehaviour
         }
     }
 
-    // ===== UI参照 =====
-    private HPBarUI _hpBarUI;
-    private TimerUI _timerUI;
-    private TimingIndicatorUI _timingIndicatorUI;
-    private PlayerStatusUI _playerStatusUI;
-    private ResultScreenUI _resultScreenUI;
+    // ===== UI References (Inspector) =====
+    [SerializeField] private Slider _hpBarSlider;
+    [SerializeField] private TextMeshProUGUI _timerText;
+    [SerializeField] private Slider _beatSlider;
+    [SerializeField] private Image _syncIndicator;
+    [SerializeField] private CanvasGroup _resultScreenCanvasGroup;
+    [SerializeField] private TextMeshProUGUI _resultText;
+    [SerializeField] private TextMeshProUGUI _scoreText;
+    [SerializeField] private TextMeshProUGUI _shakeCountText;
+    [SerializeField] private TextMeshProUGUI _syncCountText;
+    [SerializeField] private Button _retryButton;
     
     private void Awake()
     {
@@ -49,19 +56,22 @@ public class UIManager : MonoBehaviour
     
     private void Initialize()
     {
-        // UI要素を取得
-        _hpBarUI = FindObjectOfType<HPBarUI>();
-        _timerUI = FindObjectOfType<TimerUI>();
-        _timingIndicatorUI = FindObjectOfType<TimingIndicatorUI>();
-        _playerStatusUI = FindObjectOfType<PlayerStatusUI>();
-        _resultScreenUI = FindObjectOfType<ResultScreenUI>();
-        
         // GameManager のイベントをリッスン
         if (GameManager.Instance != null)
         {
             GameManager.Instance.OnGameTick += UpdateUI;
+            GameManager.Instance.OnGameStateChanged += OnGameStateChanged;
             GameManager.Instance.OnBossDamage += OnBossDamage;
         }
+        
+        // リトライボタンの登録
+        if (_retryButton != null)
+        {
+            _retryButton.onClick.AddListener(OnRetryClicked);
+        }
+        
+        // 結果画面を非表示
+        HideResultScreen();
         
         if (GameConstants.DEBUG_MODE)
         {
@@ -71,130 +81,23 @@ public class UIManager : MonoBehaviour
     
     private void UpdateUI(float elapsedTime)
     {
-        // HP BAR更新
-        if (_hpBarUI != null)
+        // HP BAR更新（Sliderベース）
+        if (_hpBarSlider != null)
         {
-            _hpBarUI.UpdateHP(GameManager.Instance.BossCurrentHP, GameManager.Instance.BossMaxHP);
+            float fillAmount = GameManager.Instance.BossCurrentHP / GameManager.Instance.BossMaxHP;
+            _hpBarSlider.value = fillAmount;
         }
         
         // タイマー更新
-        if (_timerUI != null)
+        if (_timerText != null)
         {
-            float remainingTime = GameConstants.TOTAL_GAME_TIME - elapsedTime;
-            _timerUI.UpdateTimer(remainingTime);
+            float remainingTime = Mathf.Max(0, GameConstants.TOTAL_GAME_TIME - elapsedTime);
+            int minutes = (int)(remainingTime / 60f);
+            int seconds = (int)(remainingTime % 60f);
+            _timerText.text = $"{minutes:D1}:{seconds:D2}";
         }
         
         // タイミングインジケーター更新
-        if (_timingIndicatorUI != null)
-        {
-            _timingIndicatorUI.UpdateIndicator(elapsedTime);
-        }
-    }
-    
-    /// <summary>
-    /// ボスダメージ時のコールバック
-    /// </summary>
-    private void OnBossDamage(float damage, DamageType damageType)
-    {
-        ShowDamagePopup(damage, damageType);
-    }
-    
-    /// <summary>
-    /// ダメージポップアップ表示
-    /// </summary>
-    public void ShowDamagePopup(float damage, DamageType damageType)
-    {
-        string damageText = damageType switch
-        {
-            DamageType.Normal => $"-{damage:F0}",
-            DamageType.Sync => $"-{damage:F0} SYNC!",
-            DamageType.Boss => $"-{damage:F0} DAMAGE!",
-            _ => $"-{damage:F0}"
-        };
-        
-        // 画面中央上にポップアップ生成
-        if (GameConstants.DEBUG_MODE)
-        {
-            Debug.Log($"[UIManager] Showing damage popup: {damageText}");
-        }
-    }
-    
-    /// <summary>
-    /// UIマネージャーをリセット
-    /// </summary>
-    public void Reset()
-    {
-        if (_resultScreenUI != null)
-        {
-            _resultScreenUI.Hide();
-        }
-        
-        if (GameConstants.DEBUG_MODE)
-        {
-            Debug.Log("[UIManager] Reset");
-        }
-    }
-    
-    // ===== Getter =====
-    public HPBarUI HPBarUI => _hpBarUI;
-    public TimerUI TimerUI => _timerUI;
-    public TimingIndicatorUI TimingIndicatorUI => _timingIndicatorUI;
-    public ResultScreenUI ResultScreenUI => _resultScreenUI;
-}
-
-/// <summary>
-/// ボスHP BAR表示
-/// </summary>
-public class HPBarUI : MonoBehaviour
-{
-    [SerializeField] private UnityEngine.UI.Image _hpFillImage;
-    [SerializeField] private UnityEngine.UI.Text _hpText;
-    
-    public void UpdateHP(float currentHP, float maxHP)
-    {
-        if (_hpFillImage != null)
-        {
-            _hpFillImage.fillAmount = currentHP / maxHP;
-        }
-        
-        if (_hpText != null)
-        {
-            _hpText.text = $"HP: {currentHP:F0} / {maxHP:F0}";
-        }
-    }
-}
-
-/// <summary>
-/// 残り時間表示
-/// </summary>
-public class TimerUI : MonoBehaviour
-{
-    [SerializeField] private UnityEngine.UI.Text _timerText;
-    
-    public void UpdateTimer(float remainingTime)
-    {
-        remainingTime = Mathf.Max(0, remainingTime);
-        int minutes = (int)(remainingTime / 60f);
-        int seconds = (int)(remainingTime % 60f);
-        
-        if (_timerText != null)
-        {
-            _timerText.text = $"{minutes:D1}:{seconds:D2}";
-        }
-    }
-}
-
-/// <summary>
-/// タイミングインジケーター表示
-/// </summary>
-public class TimingIndicatorUI : MonoBehaviour
-{
-    [SerializeField] private UnityEngine.UI.Slider _beatSlider;
-    [SerializeField] private UnityEngine.UI.Image _syncIndicator;
-    
-    public void UpdateIndicator(float gameTime)
-    {
-        // ビート進捗を更新
         if (_beatSlider != null)
         {
             TimingSystem timingSystem = TimingSystem.Instance;
@@ -211,69 +114,59 @@ public class TimingIndicatorUI : MonoBehaviour
             _syncIndicator.enabled = (currentPhase == GamePhase.BossSyncRequired);
         }
     }
-}
-
-/// <summary>
-/// プレイヤーステータス表示
-/// </summary>
-public class PlayerStatusUI : MonoBehaviour
-{
-    [SerializeField] private Transform _playerSlotContainer;
-    [SerializeField] private GameObject _playerSlotPrefab;
     
-    private void Start()
+    /// <summary>
+    /// ボスダメージ時のコールバック
+    /// </summary>
+    private void OnBossDamage(float damage, DamageType damageType)
     {
-        // プレイヤーが接続されたら自動的にスロットを生成
-        GameManager.Instance.OnPlayerShake += OnPlayerShake;
+        ShowDamagePopup(damage, damageType);
     }
     
-    private void OnPlayerShake(int childId, int shakeCount)
-    {
-        PlayerManager playerManager = PlayerManager.Instance;
-        playerManager.UpdateAllPlayerUI();
-    }
-}
-
-/// <summary>
-/// 結果画面表示
-/// </summary>
-public class ResultScreenUI : MonoBehaviour
-{
-    [SerializeField] private CanvasGroup _canvasGroup;
-    [SerializeField] private UnityEngine.UI.Text _resultText;
-    [SerializeField] private UnityEngine.UI.Text _scoreText;
-    [SerializeField] private UnityEngine.UI.Text _shakeCountText;
-    [SerializeField] private UnityEngine.UI.Text _syncCountText;
-    [SerializeField] private UnityEngine.UI.Button _retryButton;
-    
-    private void Start()
-    {
-        GameManager.Instance.OnGameStateChanged += OnGameStateChanged;
-        
-        if (_retryButton != null)
-        {
-            _retryButton.onClick.AddListener(OnRetryClicked);
-        }
-    }
-    
+    /// <summary>
+    /// ゲーム状態が変更された
+    /// </summary>
     private void OnGameStateChanged(GameState newState)
     {
         if (newState == GameState.Result)
         {
-            Show();
+            ShowResultScreen();
         }
-        else
+        else if (newState == GameState.Title)
         {
-            Hide();
+            HideResultScreen();
         }
     }
     
-    public void Show()
+    /// <summary>
+    /// ダメージポップアップ表示
+    /// </summary>
+    public void ShowDamagePopup(float damage, DamageType damageType)
     {
-        if (_canvasGroup != null)
+        string damageText = damageType switch
         {
-            _canvasGroup.alpha = 1f;
-            _canvasGroup.interactable = true;
+            DamageType.Normal => $"-{damage:F0}",
+            DamageType.Sync => $"-{damage:F0} SYNC!",
+            DamageType.Boss => $"-{damage:F0} DAMAGE!",
+            _ => $"-{damage:F0}"
+        };
+        
+        if (GameConstants.DEBUG_MODE)
+        {
+            Debug.Log($"[UIManager] Damage popup: {damageText}");
+        }
+    }
+    
+    /// <summary>
+    /// 結果画面を表示
+    /// </summary>
+    private void ShowResultScreen()
+    {
+        if (_resultScreenCanvasGroup != null)
+        {
+            _resultScreenCanvasGroup.alpha = 1f;
+            _resultScreenCanvasGroup.interactable = true;
+            _resultScreenCanvasGroup.blocksRaycasts = true;
         }
         
         // 結果情報を表示
@@ -301,17 +194,34 @@ public class ResultScreenUI : MonoBehaviour
         }
     }
     
-    public void Hide()
+    /// <summary>
+    /// 結果画面を非表示
+    /// </summary>
+    private void HideResultScreen()
     {
-        if (_canvasGroup != null)
+        if (_resultScreenCanvasGroup != null)
         {
-            _canvasGroup.alpha = 0f;
-            _canvasGroup.interactable = false;
+            _resultScreenCanvasGroup.alpha = 0f;
+            _resultScreenCanvasGroup.interactable = false;
+            _resultScreenCanvasGroup.blocksRaycasts = false;
         }
     }
     
     private void OnRetryClicked()
     {
         GameManager.Instance.StartGame();
+    }
+    
+    /// <summary>
+    /// UIマネージャーをリセット
+    /// </summary>
+    public void Reset()
+    {
+        HideResultScreen();
+        
+        if (GameConstants.DEBUG_MODE)
+        {
+            Debug.Log("[UIManager] Reset");
+        }
     }
 }
