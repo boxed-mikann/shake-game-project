@@ -25,6 +25,7 @@ public class InputManager : MonoBehaviour
     // ===== SerialPort通信 =====
     private SerialPort _serialPort;
     private bool _isSerialConnected = false;
+    private float _lastReconnectTime = 0f;
     
     // ===== イベント =====
     public delegate void OnShakeEvent(int deviceId, int shakeCount, float acceleration);
@@ -60,13 +61,16 @@ public class InputManager : MonoBehaviour
             
             if (GameConstants.DEBUG_MODE)
             {
-                Debug.Log("[InputManager] SerialPort connected successfully");
+                Debug.Log("[InputManager] ✅ SerialPort connected successfully");
             }
         }
         catch (System.Exception ex)
         {
             _isSerialConnected = false;
-            Debug.LogWarning($"[InputManager] Failed to connect SerialPort: {ex.Message}");
+            if (GameConstants.DEBUG_MODE)
+            {
+                Debug.LogWarning($"[InputManager] ❌ Failed to connect SerialPort: {ex.Message}. Retrying in {GameConstants.SERIAL_RECONNECT_INTERVAL}s");
+            }
         }
     }
     
@@ -76,6 +80,15 @@ public class InputManager : MonoBehaviour
         if (_isSerialConnected)
         {
             ProcessSerialInput();
+        }
+        else
+        {
+            // SerialPort未接続の場合は定期的に再接続を試みる
+            if (Time.time - _lastReconnectTime >= GameConstants.SERIAL_RECONNECT_INTERVAL)
+            {
+                _lastReconnectTime = Time.time;
+                InitializeSerialPort();
+            }
         }
         
         // キーボード入力（デバッグ用）

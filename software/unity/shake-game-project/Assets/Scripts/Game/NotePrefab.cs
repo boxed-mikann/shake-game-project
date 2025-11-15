@@ -1,29 +1,22 @@
 using UnityEngine;
-using UnityEngine.UI;
 
 /// <summary>
 /// 音符・休符オブジェクト
-/// 責務：自身の見た目管理、はじけ判定、フェーズ反映
+/// 責務：自身の見た目管理（画像・色）、フェーズ反映
+/// 
+/// シェイク入力で GameManager が このオブジェクトを破壊・スコア更新する
 /// </summary>
 public class NotePrefab : MonoBehaviour
 {
-    private Phase _currentPhase = Phase.NotePhase;
-    private Image _image;
-    private Button _button;
+    [SerializeField] private Sprite noteSprite;        // 音符の画像
+    [SerializeField] private Sprite restSprite;        // 休符の画像
     
-    // 色設定
-    private Color _noteColor = Color.white;      // 音符（白）
-    private Color _restColor = new Color(0.5f, 0.5f, 0.5f, 1f);  // 休符（グレー）
+    private Phase _currentPhase = Phase.NotePhase;
+    private SpriteRenderer _spriteRenderer;
     
     private void Awake()
     {
-        _image = GetComponent<Image>();
-        _button = GetComponent<Button>();
-        
-        if (_button != null)
-        {
-            _button.onClick.AddListener(OnNoteClicked);
-        }
+        _spriteRenderer = GetComponent<SpriteRenderer>();
     }
     
     private void Start()
@@ -33,49 +26,31 @@ public class NotePrefab : MonoBehaviour
     }
     
     /// <summary>
-    /// フェーズを設定し、見た目を更新
+    /// フェーズを設定し、見た目を更新（Sprite と色）
     /// </summary>
     public void SetPhase(Phase phase)
     {
         _currentPhase = phase;
         
-        if (_image != null)
+        if (_spriteRenderer != null)
         {
             if (phase == Phase.NotePhase)
             {
-                _image.color = _noteColor;  // 白
+                // 音符フェーズ：音符画像を表示
+                if (noteSprite != null)
+                    _spriteRenderer.sprite = noteSprite;
             }
-            else
+            else if (phase == Phase.RestPhase)
             {
-                _image.color = _restColor;  // グレー
+                // 休符フェーズ：休符画像を表示
+                if (restSprite != null)
+                    _spriteRenderer.sprite = restSprite;
             }
         }
     }
     
     /// <summary>
-    /// クリック時の処理
+    /// 現在のフェーズを取得
     /// </summary>
-    private void OnNoteClicked()
-    {
-        if (_currentPhase == Phase.NotePhase)
-        {
-            // 音符をはじけた → スコア加算
-            ScoreManager.Instance.AddNoteScore(1);
-            
-            if (GameConstants.DEBUG_MODE)
-                Debug.Log("[NotePrefab] ✨ Note hit!");
-        }
-        else if (_currentPhase == Phase.RestPhase)
-        {
-            // 休符をはじけた → ペナルティ + フリーズ
-            ScoreManager.Instance.SubtractRestPenalty(1);
-            GameManager.Instance.TriggerFreeze();
-            
-            if (GameConstants.DEBUG_MODE)
-                Debug.Log("[NotePrefab] ❌ Rest hit (penalty!)");
-        }
-        
-        // オブジェクト削除
-        Destroy(gameObject);
-    }
+    public Phase GetCurrentPhase() => _currentPhase;
 }

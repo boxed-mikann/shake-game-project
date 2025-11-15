@@ -12,6 +12,10 @@ public class GameManager : MonoBehaviour
 {
     [SerializeField] private Transform notesContainer;  // 音符の親オブジェクト
     [SerializeField] private GameObject notePrefab;     // 音符Prefab
+    [SerializeField] private AudioClip burstSoundClip;  // 音符破裂音
+    [SerializeField] private GameObject panelWarning;   // ビジュアル警告（フリーズ時に表示）
+    
+    private AudioSource _audioSource;                   // 音声再生用（事前生成で遅延回避）
     
     private static GameManager _instance;
     public static GameManager Instance
@@ -50,6 +54,13 @@ public class GameManager : MonoBehaviour
     
     private void Start()
     {
+        // AudioSource の初期化（遅延回避のため）
+        _audioSource = GetComponent<AudioSource>();
+        if (_audioSource == null)
+        {
+            _audioSource = gameObject.AddComponent<AudioSource>();
+        }
+        
         // InputManager のイベント購読
         if (InputManager.Instance != null)
         {
@@ -86,12 +97,26 @@ public class GameManager : MonoBehaviour
         _currentSpawnRate = GameConstants.SPAWN_RATE_BASE;
         _spawnTimer = 0f;
         
+        // panelWarning を非表示にする
+        if (panelWarning != null)
+        {
+            panelWarning.SetActive(false);
+        }
+        
         ScoreManager.Instance.Initialize();
         PhaseController.Instance.Initialize();
         
+        // PhaseIndicatorSlider をリセット
+        PhaseIndicatorSlider[] sliders = FindObjectsOfType<PhaseIndicatorSlider>();
+        foreach (var slider in sliders)
+        {
+            slider.Reset();
+        }
+        
         OnGameStateChanged?.Invoke(_gameState);
         
-        Debug.Log("[GameManager] ▶️ Game started!");
+        if (GameConstants.DEBUG_MODE)
+            Debug.Log("[GameManager] ▶️ Game started!");
     }
     
     /// <summary>
@@ -105,7 +130,9 @@ public class GameManager : MonoBehaviour
         if (_gameTimer <= GameConstants.LAST_SPRINT_DURATION && _gameTimer > GameConstants.LAST_SPRINT_DURATION - 0.1f)
         {
             _currentSpawnRate = (int)(GameConstants.SPAWN_RATE_BASE * GameConstants.LAST_SPRINT_MULTIPLIER);
-            Debug.Log("[GameManager] ⚡ Last sprint! Spawn rate x2");
+            PhaseController.Instance.EnterLastSprint();
+            if (GameConstants.DEBUG_MODE)
+                Debug.Log("[GameManager] ⚡ Last sprint! Spawn rate x2, Phase switching disabled");
         }
         
         // タイムアップ
@@ -127,8 +154,12 @@ public class GameManager : MonoBehaviour
             if (_freezeRemainingTime <= 0f)
             {
                 _isFrozen = false;
-                Time.timeScale = 1f;
-                Debug.Log("[GameManager] ❌ Freeze released");
+                
+                // PanelWarning は TriggerFreeze() で非表示にする（ゲーム進行中のみ表示）
+                // ゲーム終了/開始時には StartGame() で非表示にする
+                
+                if (GameConstants.DEBUG_MODE)
+                    Debug.Log("[GameManager] ❌ Freeze released");
             }
         }
     }
@@ -144,6 +175,18 @@ public class GameManager : MonoBehaviour
             return;
         }
         
+        // 生成数上限チェック
+        if (notesContainer.childCount >= GameConstants.MAX_NOTE_COUNT)
+        {
+            return;
+        }
+        
+        // 休符フェーズで既に Note が存在する場合は生成しない
+        if (PhaseController.Instance.GetCurrentPhase() == Phase.RestPhase && notesContainer.childCount > 0)
+        {
+            return;
+        }
+        
         _spawnTimer += Time.deltaTime;
         float spawnInterval = 1f / _currentSpawnRate;  // 秒/個
         
@@ -155,26 +198,57 @@ public class GameManager : MonoBehaviour
     }
     
     /// <summary>
-    /// 音符を1個スポーン
+    /// 音符を1個スポーン - 回転とランダムカラー付き
     /// </summary>
     private void SpawnNote()
     {
         Vector3 randomPos = new Vector3(
-            Random.Range(-300f, 300f),
-            Random.Range(-200f, 200f),
+            Random.Range(-6f, 6f),
+            Random.Range(-4f, 4f),
             0f
         );
         
-        GameObject noteGO = Instantiate(notePrefab, randomPos, Quaternion.identity, notesContainer);
+        // ±30度の範囲でランダムに回転
+        float randomRotation = Random.Range(-30f, 30f);
+        Quaternion rotationQuaternion = Quaternion.Euler(0f, 0f, randomRotation);
+        
+        GameObject noteGO = Instantiate(notePrefab, randomPos, rotationQuaternion, notesContainer);
+        
+        // ランダムカラー設定（SpriteRenderer がある場合）
+        SpriteRenderer sr = noteGO.GetComponent<SpriteRenderer>();
+        if (sr != null)
+        {
+            sr.color = GetRandomColor();
+        }
         
         if (GameConstants.DEBUG_MODE)
         {
-            Debug.Log($"[GameManager] 🎵 Note spawned at {randomPos}");
+            Debug.Log($"[GameManager] 🎵 Note spawned at {randomPos}, rotation: {randomRotation}°");
         }
     }
     
     /// <summary>
-    /// シェイク入力を処理
+    /// ランダムカラーを取得
+    /// </summary>
+    private Color GetRandomColor()
+    {
+        Color[] colors = new Color[]
+        {
+            Color.red,
+            Color.green,
+            Color.blue,
+            Color.yellow,
+            Color.cyan,
+            Color.magenta,
+            new Color(1f, 0.5f, 0f),     // Orange
+            new Color(0.5f, 0f, 0.5f)    // Purple
+        };
+        
+        return colors[Random.Range(0, colors.Length)];
+    }
+    
+    /// <summary>
+    /// シェイク入力を処理 - 既存の音符を破壊してスコア更新
     /// </summary>
     private void OnShakeInput(int deviceId, int shakeCount, float acceleration)
     {
@@ -186,12 +260,66 @@ public class GameManager : MonoBehaviour
             Debug.Log($"[GameManager] 📊 Shake input: DeviceID={deviceId}, Count={shakeCount}, Accel={acceleration}");
         }
         
-        // 画面上の音符をランダムにはじける
-        // （NotePrefab.OnNoteClicked が呼ばれて、スコア処理される）
+        // 画面上に存在する音符を探す
+        NotePrefab[] allNotes = FindObjectsOfType<NotePrefab>();
+        
+        if (allNotes.Length == 0)
+        {
+            Debug.Log("[GameManager] No notes to destroy");
+            return;
+        }
+        
+        // 最新（最後に生成された）の音符を取得
+        NotePrefab targetNote = allNotes[allNotes.Length - 1];
+        Phase currentPhase = PhaseController.Instance.GetCurrentPhase();
+        
+        if (GameConstants.DEBUG_MODE)
+        {
+            Debug.Log($"[GameManager] 💥 Destroying note (Phase: {currentPhase})");
+        }
+        
+        if (currentPhase == Phase.NotePhase)
+        {
+            // 音符フェーズ → スコア加算
+            ScoreManager.Instance.AddNoteScore(1);
+        }
+        else if (currentPhase == Phase.RestPhase)
+        {
+            // 休符フェーズ → ペナルティ＋フリーズ
+            ScoreManager.Instance.SubtractRestPenalty(1);
+            TriggerFreeze();
+        }
+        
+        // 破裂音を再生
+        PlayBurstSound(targetNote.transform.position);
+        
+        // 音符を破壊
+        Destroy(targetNote.gameObject);
     }
     
     /// <summary>
-    /// フリーズ効果を発動
+    /// 破裂音を再生
+    /// </summary>
+    private void PlayBurstSound(Vector3 position)
+    {
+        if (burstSoundClip == null || _audioSource == null)
+        {
+            if (GameConstants.DEBUG_MODE)
+                Debug.LogWarning("[GameManager] burstSoundClip or _audioSource is not assigned!");
+            return;
+        }
+        
+        // 事前割り当て済みの AudioSource を使用して再生
+        _audioSource.transform.position = position;
+        _audioSource.PlayOneShot(burstSoundClip, 0.7f);
+        
+        if (GameConstants.DEBUG_MODE)
+            Debug.Log("[GameManager] 🔊 Burst sound played");
+    }
+    
+    /// <summary>
+    /// フリーズ効果を発動（入力ロック + ビジュアルフィードバック）
+    /// ラストスパート中には表示しない（ラストスパートフェーズが優先）
     /// </summary>
     public void TriggerFreeze()
     {
@@ -199,12 +327,20 @@ public class GameManager : MonoBehaviour
             return;
         
         _isFrozen = true;
-        _freezeRemainingTime = GameConstants.FREEZE_DURATION;
-        Time.timeScale = GameConstants.FREEZE_TIME_SCALE;
+        _freezeRemainingTime = GameConstants.INPUT_LOCK_DURATION;
         
-        // ホワイトフラッシュなど視覚効果（UIManager 等で実装）
-        
-        Debug.Log("[GameManager] ⏸️ Freeze triggered!");
+        // ビジュアルフィードバック：警告パネルを表示（ラストスパート中は表示しない）
+        if (panelWarning != null && _gameTimer > GameConstants.LAST_SPRINT_DURATION)
+        {
+            panelWarning.SetActive(true);
+            
+            if (GameConstants.DEBUG_MODE)
+                Debug.Log($"[GameManager] ⏸️ Freeze triggered! PanelWarning shown for {GameConstants.INPUT_LOCK_DURATION}s");
+        }
+        else if (GameConstants.DEBUG_MODE)
+        {
+            Debug.Log($"[GameManager] ⏸️ Freeze triggered! (PanelWarning suppressed in LastSprint)");
+        }
     }
     
     /// <summary>
@@ -215,6 +351,12 @@ public class GameManager : MonoBehaviour
         _isGameRunning = false;
         Time.timeScale = 1f;  // フリーズを解除
         PhaseController.Instance.StopGame();
+        
+        // 画面上の音符をすべてクリーンアップ
+        foreach (Transform child in notesContainer)
+        {
+            Destroy(child.gameObject);
+        }
         
         _gameState = GameState.Result;
         OnGameStateChanged?.Invoke(_gameState);
