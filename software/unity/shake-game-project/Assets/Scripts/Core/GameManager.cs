@@ -1,262 +1,231 @@
 using UnityEngine;
 using System.Collections;
-using System.Collections.Generic;
 
 /// <summary>
 /// ゲーム全体を統括するマネージャー
-/// 責務：フェーズ管理、ゲームモード管理、イベント処理
+/// 責務：ゲーム進行管理、タイマー管理、入力処理、フリーズ効果、画面遷移
+/// 新設計：1チーム協力型、60秒ゲーム、音符はじけメカニクス
 /// </summary>
+public enum GameState { Start, Playing, Result }
+
 public class GameManager : MonoBehaviour
 {
-    [SerializeField] private SerialDataParser serialDataParser;
-    [SerializeField] private SoundManager soundManager;
-    [SerializeField] private VideoManager videoManager;
-    [SerializeField] private VictoryManager victoryManager;
-    [SerializeField] private GamePhaseManager gamePhaseManager;
-    [SerializeField] private UIManager uiManager;
-    [SerializeField] private GameMode[] gameModePrefabs;
+    [SerializeField] private Transform notesContainer;  // 音符の親オブジェクト
+    [SerializeField] private GameObject notePrefab;     // 音符Prefab
     
-    private Dictionary<string, GameMode> activeModes = new Dictionary<string, GameMode>();
-    private GameMode currentGameMode;
-    private Transform gameModeContainer;
-    
-    private static GameManager instance;
-    
-    void Awake()
+    private static GameManager _instance;
+    public static GameManager Instance
     {
-        if (instance == null)
+        get
         {
-            instance = this;
+            if (_instance == null)
+            {
+                _instance = FindObjectOfType<GameManager>();
+            }
+            return _instance;
         }
-        else
+    }
+
+    private GameState _gameState = GameState.Start;
+    private float _gameTimer = 0f;
+    private bool _isGameRunning = false;
+    private bool _isFrozen = false;
+    private float _freezeRemainingTime = 0f;
+    private int _currentSpawnRate = GameConstants.SPAWN_RATE_BASE;
+    private float _spawnTimer = 0f;
+    
+    // イベント
+    public delegate void OnGameStateChangedEvent(GameState newState);
+    public event OnGameStateChangedEvent OnGameStateChanged;
+    
+    private void Awake()
+    {
+        if (_instance != null && _instance != this)
         {
             Destroy(gameObject);
             return;
         }
+        _instance = this;
     }
     
-    void Start()
+    private void Start()
     {
-        gameModeContainer = new GameObject("---GameModes---").transform;
-        RegisterGameModes();
-        InitializeEvents();
-        gamePhaseManager.SetPhase(GamePhase.Menu);
-    }
-    
-    void Update()
-    {
-        if (gamePhaseManager.IsPlaying() && currentGameMode != null)
+        // InputManager のイベント購読
+        if (InputManager.Instance != null)
         {
-            ProcessShakeData();
+            InputManager.Instance.OnShakeDetected += OnShakeInput;
+        }
+        
+        // ScoreManager 初期化
+        if (ScoreManager.Instance != null)
+        {
+            ScoreManager.Instance.Initialize();
         }
     }
     
-    private void RegisterGameModes()
+    private void Update()
     {
-        foreach (GameMode modePrefab in gameModePrefabs)
+        if (_gameState == GameState.Playing)
         {
-            GameMode modeInstance = Instantiate(modePrefab, gameModeContainer);
-            modeInstance.gameObject.SetActive(false);
+            UpdateGameTimer();
+            UpdateFreezeEffect();
+            UpdateNoteSpawning();
+        }
+    }
+    
+    /// <summary>
+    /// ゲーム開始
+    /// </summary>
+    public void StartGame()
+    {
+        _gameState = GameState.Playing;
+        _gameTimer = GameConstants.GAME_DURATION;
+        _isGameRunning = true;
+        _isFrozen = false;
+        _freezeRemainingTime = 0f;
+        _currentSpawnRate = GameConstants.SPAWN_RATE_BASE;
+        _spawnTimer = 0f;
+        
+        ScoreManager.Instance.Initialize();
+        PhaseController.Instance.Initialize();
+        
+        OnGameStateChanged?.Invoke(_gameState);
+        
+        Debug.Log("[GameManager] ▶️ Game started!");
+    }
+    
+    /// <summary>
+    /// ゲームタイマー更新
+    /// </summary>
+    private void UpdateGameTimer()
+    {
+        _gameTimer -= Time.deltaTime;
+        
+        // ラストスパート判定（最後10秒）
+        if (_gameTimer <= GameConstants.LAST_SPRINT_DURATION && _gameTimer > GameConstants.LAST_SPRINT_DURATION - 0.1f)
+        {
+            _currentSpawnRate = (int)(GameConstants.SPAWN_RATE_BASE * GameConstants.LAST_SPRINT_MULTIPLIER);
+            Debug.Log("[GameManager] ⚡ Last sprint! Spawn rate x2");
+        }
+        
+        // タイムアップ
+        if (_gameTimer <= 0f)
+        {
+            EndGame();
+        }
+    }
+    
+    /// <summary>
+    /// フリーズエフェクト更新
+    /// </summary>
+    private void UpdateFreezeEffect()
+    {
+        if (_isFrozen)
+        {
+            _freezeRemainingTime -= Time.deltaTime;
             
-            string modeName = modeInstance.GetModeName();
-            activeModes[modeName] = modeInstance;
-            
-            Debug.Log($"✅ Registered: {modeName}");
-        }
-    }
-    
-    public void SelectGameMode(string modeName)
-    {
-        if (!activeModes.ContainsKey(modeName))
-        {
-            Debug.LogError($"❌ Game mode not found: {modeName}");
-            return;
-        }
-        
-        if (currentGameMode != null)
-        {
-            currentGameMode.gameObject.SetActive(false);
-            currentGameMode.ResetGame();
-        }
-        
-        currentGameMode = activeModes[modeName];
-        currentGameMode.gameObject.SetActive(true);
-        
-        Debug.Log($"🎮 Switched to: {modeName}");
-        
-        if (uiManager != null)
-            uiManager.SetCurrentGameMode(modeName);
-        
-        gamePhaseManager.SetPhase(GamePhase.Playing);
-    }
-    
-    private void ProcessShakeData()
-    {
-        var shakeDataQueue = serialDataParser.GetReceivedMessages();  // ← ここ
-        
-        while (shakeDataQueue.Count > 0)
-        {
-            ShakeDataPacket shake = shakeDataQueue.Dequeue();  // ★ 修正：Dequeue から直接取得
-            
-            if (shake.childID >= 0)
+            if (_freezeRemainingTime <= 0f)
             {
-                if (soundManager != null)
-                    soundManager.PlayShakeSound();
-                
-                if (currentGameMode != null)
-                    currentGameMode.OnShakeDetected(shake);
+                _isFrozen = false;
+                Time.timeScale = 1f;
+                Debug.Log("[GameManager] ❌ Freeze released");
             }
         }
     }
     
-    private ShakeDataPacket ParseMessage(string message)
+    /// <summary>
+    /// 音符のスポーン管理
+    /// </summary>
+    private void UpdateNoteSpawning()
     {
-        ShakeDataPacket packet = new ShakeDataPacket { childID = -1 };
-        
-        try
+        if (notePrefab == null || notesContainer == null)
         {
-            string[] parts = message.Split(',');
-            if (parts.Length >= 3)
-            {
-                packet.childID = int.Parse(parts[0]);
-                packet.shakeCount = int.Parse(parts[1]);
-                packet.acceleration = float.Parse(parts[2]);
-            }
-        }
-        catch (System.Exception e)
-        {
-            Debug.LogWarning($"⚠️ Parse error: {e.Message}");
-        }
-        
-        return packet;
-    }
-    
-    private void InitializeEvents()
-    {
-        if (gamePhaseManager != null)
-            gamePhaseManager.OnPhaseChanged += OnGamePhaseChanged;
-        
-        if (currentGameMode != null)
-        {
-            currentGameMode.OnPlayerWon += OnPlayerWon;
-        }
-    }
-    
-    private void OnGamePhaseChanged(GamePhase newPhase)
-    {
-        switch (newPhase)
-        {
-            case GamePhase.Menu:
-                OnMenuPhase();
-                break;
-            case GamePhase.Playing:
-                OnPlayingPhase();
-                break;
-            case GamePhase.Victory:
-                OnVictoryPhase();
-                break;
-            case GamePhase.Result:
-                OnResultPhase();
-                break;
-        }
-    }
-    
-    private void OnMenuPhase()
-    {
-        Debug.Log("📋 Menu Phase");
-        
-        if (currentGameMode != null)
-        {
-            currentGameMode.gameObject.SetActive(false);
-            currentGameMode.ResetGame();
-        }
-        
-        if (victoryManager != null)
-            victoryManager.HideVictoryUI();
-        
-        if (videoManager != null)
-            videoManager.PlayGameplayVideo();
-        
-        if (uiManager != null)
-            uiManager.ShowMenuScreen();
-    }
-    
-    private void OnPlayingPhase()
-    {
-        Debug.Log("▶️ Playing Phase");
-        
-        if (currentGameMode == null)
-        {
-            Debug.LogError("❌ Game mode not selected!");
+            Debug.LogWarning("[GameManager] notePrefab or notesContainer is not assigned!");
             return;
         }
         
-        currentGameMode.Initialize();
+        _spawnTimer += Time.deltaTime;
+        float spawnInterval = 1f / _currentSpawnRate;  // 秒/個
         
-        if (videoManager != null)
-            videoManager.PlayGameplayVideo();
-        
-        if (victoryManager != null)
-            victoryManager.HideVictoryUI();
-        
-        if (uiManager != null)
-            uiManager.ShowGameplayScreen();
-        
-        // イベント登録
-        currentGameMode.OnPlayerWon += OnPlayerWon;
+        while (_spawnTimer >= spawnInterval)
+        {
+            SpawnNote();
+            _spawnTimer -= spawnInterval;
+        }
     }
     
-    private void OnVictoryPhase()
+    /// <summary>
+    /// 音符を1個スポーン
+    /// </summary>
+    private void SpawnNote()
     {
-        Debug.Log("🏆 Victory Phase");
+        Vector3 randomPos = new Vector3(
+            Random.Range(-300f, 300f),
+            Random.Range(-200f, 200f),
+            0f
+        );
         
-        if (uiManager != null)
-            uiManager.ShowVictoryScreen();
+        GameObject noteGO = Instantiate(notePrefab, randomPos, Quaternion.identity, notesContainer);
         
-        if (videoManager != null)
-            videoManager.PlayVictoryVideo();
+        if (GameConstants.DEBUG_MODE)
+        {
+            Debug.Log($"[GameManager] 🎵 Note spawned at {randomPos}");
+        }
     }
     
-    private void OnResultPhase()
+    /// <summary>
+    /// シェイク入力を処理
+    /// </summary>
+    private void OnShakeInput(int deviceId, int shakeCount, float acceleration)
     {
-        Debug.Log("📊 Result Phase");
+        if (_gameState != GameState.Playing || _isFrozen)
+            return;
         
-        if (uiManager != null)
-            uiManager.ShowResultScreen();
+        if (GameConstants.DEBUG_MODE)
+        {
+            Debug.Log($"[GameManager] 📊 Shake input: DeviceID={deviceId}, Count={shakeCount}, Accel={acceleration}");
+        }
         
-        StartCoroutine(ReturnToMenuAfterDelay(Constants.RESULT_DISPLAY_TIME));
+        // 画面上の音符をランダムにはじける
+        // （NotePrefab.OnNoteClicked が呼ばれて、スコア処理される）
     }
     
-    private void OnPlayerWon(int winnerId)
+    /// <summary>
+    /// フリーズ効果を発動
+    /// </summary>
+    public void TriggerFreeze()
     {
-        Debug.Log($"🏆 Team {winnerId} won!");
+        if (_isFrozen)
+            return;
         
-        if (victoryManager != null)
-            victoryManager.ShowVictoryUI(winnerId);
+        _isFrozen = true;
+        _freezeRemainingTime = GameConstants.FREEZE_DURATION;
+        Time.timeScale = GameConstants.FREEZE_TIME_SCALE;
         
-        gamePhaseManager.SetPhase(GamePhase.Victory);
-        StartCoroutine(TransitionToResultAfterDelay(Constants.VICTORY_DISPLAY_TIME));
+        // ホワイトフラッシュなど視覚効果（UIManager 等で実装）
+        
+        Debug.Log("[GameManager] ⏸️ Freeze triggered!");
     }
     
-    private IEnumerator TransitionToResultAfterDelay(float delay)
+    /// <summary>
+    /// ゲーム終了
+    /// </summary>
+    private void EndGame()
     {
-        yield return new WaitForSeconds(delay);
-        gamePhaseManager.SetPhase(GamePhase.Result);
+        _isGameRunning = false;
+        Time.timeScale = 1f;  // フリーズを解除
+        PhaseController.Instance.StopGame();
+        
+        _gameState = GameState.Result;
+        OnGameStateChanged?.Invoke(_gameState);
+        
+        int finalScore = ScoreManager.Instance.GetFinalScore();
+        Debug.Log($"[GameManager] 🏁 Game ended! Final score: {finalScore}");
     }
     
-    private IEnumerator ReturnToMenuAfterDelay(float delay)
-    {
-        yield return new WaitForSeconds(delay);
-        gamePhaseManager.SetPhase(GamePhase.Menu);
-    }
-    
-    public List<string> GetAvailableGameModes() => new List<string>(activeModes.Keys);
-    public GameMode GetCurrentGameMode() => currentGameMode;
-    public static GameManager Instance => instance;
-    
-    void OnDestroy()
-    {
-        if (gamePhaseManager != null)
-            gamePhaseManager.OnPhaseChanged -= OnGamePhaseChanged;
-    }
+    // ===== Getter =====
+    public GameState CurrentGameState => _gameState;
+    public float GameTimer => _gameTimer;
+    public bool IsGameRunning => _isGameRunning;
+    public bool IsFrozen => _isFrozen;
 }
