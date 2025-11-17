@@ -1,13 +1,58 @@
 using UnityEngine;
 using System.Collections;
+using System.Collections.Generic;
 
 /// <summary>
-/// ゲーム全体を統括するマネージャー
-/// 責務：ゲーム進行管理、タイマー管理、入力処理、フリーズ効果、画面遷移
-/// 新設計：1チーム協力型、60秒ゲーム、音符はじけメカニクス
+/// ゲームフェーズの定義
+/// NotePhase: 音符フェーズ（音符を叩くと加点）
+/// RestPhase: 休符フェーズ（音符を叩くとペナルティ＋フリーズ）
+/// LastSprintPhase: ラストスパント（最後10秒、生成速度2倍）
+/// </summary>
+public enum Phase { NotePhase, RestPhase, LastSprintPhase }
+
+/// <summary>
+/// ゲーム状態の定義
 /// </summary>
 public enum GameState { Start, Playing, Result }
 
+/// <summary>
+/// ========================================
+/// アーキテクチャ概要
+/// ========================================
+/// 
+/// ◎ GameManager
+///   - ゲーム進行・タイマー管理
+///   - フェーズシーケンス生成・管理（OnPhaseChanged イベント発火）
+///   - 入力処理（シェイク入力 → 音符破壊 → スコア更新）
+///   - フリーズ効果（入力ロック + PanelWarning 表示）
+/// 
+/// ◎ OnPhaseChanged イベント
+///   - フェーズ変更時に全システムに (Phase, duration) を通知
+///   - 購読者：NotePrefab（画像更新）、UIManager（表示更新）
+///   - 毎フレーム GetPhaseAtTime() を呼ぶ無駄を削除（イベント駆動化）
+/// 
+/// ◎ NotePrefab
+///   - GameManager.OnPhaseChanged を購読
+///   - フェーズ変更時に自動的に Sprite 更新
+///   - 見た目管理に特化
+/// 
+/// ◎ UIManager（PhaseIndicatorSlider 統合）
+///   - GameManager.OnPhaseChanged を購読
+///   - フェーズテキスト + スライダー色を更新
+///   - スライダー値は毎フレーム GetPhaseProgress() で計算
+/// 
+/// ◎ GameConstants.PHASE_SEQUENCE
+///   - フェーズシーケンスの定義（配列型）
+///   - ゲーム調整時は継続時間をここで変更
+///   - GameManager が Initialize() で PHASE_SEQUENCE を展開
+/// 
+/// ⚡ パフォーマンス特性
+///   - GetPhaseAtTime() 呼び出し：フェーズ変更時のみ（60→1/秒）
+///   - FindObjectsOfType() 呼び出し：削除（入力時のみ必要な場合）
+///   - イベント駆動設計により CPU 負荷軽減
+/// 
+/// ========================================
+/// </summary>
 public class GameManager : MonoBehaviour
 {
     [SerializeField] private Transform notesContainer;  // 音符の親オブジェクト
@@ -38,9 +83,21 @@ public class GameManager : MonoBehaviour
     private int _currentSpawnRate = GameConstants.SPAWN_RATE_BASE;
     private float _spawnTimer = 0f;
     
+    // フェーズ管理（PhaseSequence から統合）
+    // GameConstants.PHASE_SEQUENCE を展開して、(Phase, startTime, duration) の List を構築
+    private List<(Phase phase, float startTime, float duration)> _phaseSegments = new List<(Phase, float, float)>();
+    private Phase _lastPhase = Phase.NotePhase;
+    
     // イベント
     public delegate void OnGameStateChangedEvent(GameState newState);
     public event OnGameStateChangedEvent OnGameStateChanged;
+    
+    /// <summary>
+    /// フェーズ変更イベント
+    /// 購読者：NotePrefab（フェーズ画像更新）、UIManager（テキスト＆スライダー色更新）
+    /// </summary>
+    public delegate void OnPhaseChangedEvent(Phase newPhase, float duration);
+    public event OnPhaseChangedEvent OnPhaseChanged;
     
     private void Awake()
     {
@@ -96,6 +153,7 @@ public class GameManager : MonoBehaviour
         _freezeRemainingTime = 0f;
         _currentSpawnRate = GameConstants.SPAWN_RATE_BASE;
         _spawnTimer = 0f;
+        _lastPhase = Phase.NotePhase;
         
         // panelWarning を非表示にする
         if (panelWarning != null)
@@ -104,14 +162,9 @@ public class GameManager : MonoBehaviour
         }
         
         ScoreManager.Instance.Initialize();
-        PhaseController.Instance.Initialize();
         
-        // PhaseIndicatorSlider をリセット
-        PhaseIndicatorSlider[] sliders = FindObjectsOfType<PhaseIndicatorSlider>();
-        foreach (var slider in sliders)
-        {
-            slider.Reset();
-        }
+        // フェーズシーケンスを初期化
+        InitializePhaseSequence(GameConstants.GAME_DURATION);
         
         OnGameStateChanged?.Invoke(_gameState);
         
@@ -121,19 +174,46 @@ public class GameManager : MonoBehaviour
     
     /// <summary>
     /// ゲームタイマー更新
+    /// 
+    /// 手順：
+    ///   1. タイマー減少（GameTimer = 60 → 0）
+    ///   2. フェーズ検知：GetPhaseAtTime() で現在フェーズを取得
+    ///   3. フェーズ変更判定：前フレーム (_lastPhase) と比較
+    ///   4. フェーズ変更時：OnPhaseChanged イベント発火
+    ///      → UIManager が OnPhaseChanged を購読してテキスト＆スライダー色を更新
+    ///      → NotePrefab が OnPhaseChanged を購読して画像を更新
+    ///   5. ラストスパート判定：GameTimer ≤ 10s で生成速度 2 倍
+    ///   6. タイムアップ判定：GameTimer ≤ 0 で EndGame() 呼び出し
+    /// 
+    /// ⚡ パフォーマンス特性
+    ///   - GetPhaseAtTime() 呼び出し：毎フレーム（1 回 O(n)、n=フェーズ数）
+    ///   - フェーズ変更検知：毎フレーム（値比較のみ O(1)）
+    ///   - OnPhaseChanged 発火：フェーズ変更時のみ（毎ゲーム約 4-5 回）
     /// </summary>
     private void UpdateGameTimer()
     {
         _gameTimer -= Time.deltaTime;
         
-        // ラストスパート判定（最後10秒）
-        if (_gameTimer <= GameConstants.LAST_SPRINT_DURATION && _gameTimer > GameConstants.LAST_SPRINT_DURATION - 0.1f)
+        // フェーズ変更を検出
+        float elapsedTime = GameConstants.GAME_DURATION - _gameTimer;
+        Phase currentPhase = GetPhaseAtTime(elapsedTime);
+        
+        if (currentPhase != _lastPhase)
         {
-            _currentSpawnRate = (int)(GameConstants.SPAWN_RATE_BASE * GameConstants.LAST_SPRINT_MULTIPLIER);
-            PhaseController.Instance.EnterLastSprint();
+            _lastPhase = currentPhase;
+            var seg = GetSegmentAtTime(elapsedTime);
+            OnPhaseChanged?.Invoke(currentPhase, seg.duration);
+            
             if (GameConstants.DEBUG_MODE)
-                Debug.Log("[GameManager] ⚡ Last sprint! Spawn rate x2, Phase switching disabled");
+            {
+                Debug.Log($"[GameManager] 🔄 Phase changed to: {currentPhase} (duration: {seg.duration:F1}s)");
+            }
         }
+        
+        // フェーズに応じた生成速度を更新（LastSprintPhase なら 2 倍）
+        _currentSpawnRate = currentPhase == Phase.LastSprintPhase
+            ? (int)(GameConstants.SPAWN_RATE_BASE * GameConstants.LAST_SPRINT_MULTIPLIER)
+            : GameConstants.SPAWN_RATE_BASE;
         
         // タイムアップ
         if (_gameTimer <= 0f)
@@ -155,8 +235,11 @@ public class GameManager : MonoBehaviour
             {
                 _isFrozen = false;
                 
-                // PanelWarning は TriggerFreeze() で非表示にする（ゲーム進行中のみ表示）
-                // ゲーム終了/開始時には StartGame() で非表示にする
+                // フリーズ終了時にPanelWarningを非表示
+                if (panelWarning != null)
+                {
+                    panelWarning.SetActive(false);
+                }
                 
                 if (GameConstants.DEBUG_MODE)
                     Debug.Log("[GameManager] ❌ Freeze released");
@@ -182,7 +265,8 @@ public class GameManager : MonoBehaviour
         }
         
         // 休符フェーズで既に Note が存在する場合は生成しない
-        if (PhaseController.Instance.GetCurrentPhase() == Phase.RestPhase && notesContainer.childCount > 0)
+        var segment = GetCurrentSegment();
+        if (segment.phase == Phase.RestPhase && notesContainer.childCount > 0)
         {
             return;
         }
@@ -271,7 +355,8 @@ public class GameManager : MonoBehaviour
         
         // 最新（最後に生成された）の音符を取得
         NotePrefab targetNote = allNotes[allNotes.Length - 1];
-        Phase currentPhase = PhaseController.Instance.GetCurrentPhase();
+        var segment = GetCurrentSegment();
+        Phase currentPhase = segment.phase;
         
         if (GameConstants.DEBUG_MODE)
         {
@@ -329,18 +414,121 @@ public class GameManager : MonoBehaviour
         _isFrozen = true;
         _freezeRemainingTime = GameConstants.INPUT_LOCK_DURATION;
         
-        // ビジュアルフィードバック：警告パネルを表示（ラストスパート中は表示しない）
-        if (panelWarning != null && _gameTimer > GameConstants.LAST_SPRINT_DURATION)
+        // ビジュアルフィードバック：警告パネルを表示（LastSprintPhase 中も関係なく凍結される）
+        var currentSegment = GetCurrentSegment();
+        if (panelWarning != null )
         {
             panelWarning.SetActive(true);
             
             if (GameConstants.DEBUG_MODE)
                 Debug.Log($"[GameManager] ⏸️ Freeze triggered! PanelWarning shown for {GameConstants.INPUT_LOCK_DURATION}s");
         }
-        else if (GameConstants.DEBUG_MODE)
+    }
+    
+    /// <summary>
+    /// <summary>
+    /// フェーズシーケンスを初期化（GameConstants.PHASE_SEQUENCE に基づく）
+    /// 
+    /// アルゴリズム：
+    ///   1. PHASE_SEQUENCE の要素を順番に _phaseSegments に展開
+    ///   2. 各要素は (Phase, startTime, duration) のタプルに変換
+    ///   3. LastSprintPhase は PHASE_SEQUENCE に明示的に含まれる
+    /// 
+    /// 例：PHASE_SEQUENCE = [10s Note, 5s Rest, ..., 15s LastSprint]
+    ///   _phaseSegments = [
+    ///     (Note, 0, 10), (Rest, 10, 5),
+    ///     (Note, 15, 10), (Rest, 25, 5),
+    ///     ...
+    ///     (LastSprint, 50, 15)
+    ///   ]
+    /// </summary>
+    private void InitializePhaseSequence(float gameDuration)
+    {
+        _phaseSegments.Clear();
+        
+        float currentTime = 0f;
+        
+        if (GameConstants.DEBUG_MODE)
         {
-            Debug.Log($"[GameManager] ⏸️ Freeze triggered! (PanelWarning suppressed in LastSprint)");
+            Debug.Log($"[GameManager] Initializing phase sequence: gameDuration={gameDuration}");
         }
+        
+        // PHASE_SEQUENCE の要素を順番に _phaseSegments に展開
+        foreach (var config in GameConstants.PHASE_SEQUENCE)
+        {
+            _phaseSegments.Add((config.phase, currentTime, config.duration));
+            currentTime += config.duration;
+        }
+        
+        if (GameConstants.DEBUG_MODE)
+        {
+            Debug.Log("[GameManager] ✅ Phase sequence initialized:");
+            foreach (var seg in _phaseSegments)
+            {
+                Debug.Log($"  [{seg.startTime:F1}s-{seg.startTime + seg.duration:F1}s] {seg.phase} ({seg.duration:F1}s)");
+            }
+        }
+    }
+    
+    /// <summary>
+    /// 指定時刻のフェーズセグメントを取得
+    /// 
+    /// 用途：フェーズ変更検知、スライダー表示、ログ出力
+    /// 
+    /// 戻り値：(Phase, startTime, duration) のタプル
+    ///   - Phase：フェーズ種別
+    ///   - startTime：セグメント開始時刻（秒）
+    ///   - duration：セグメント継続時間（秒）
+    /// </summary>
+    private (Phase phase, float startTime, float duration) GetSegmentAtTime(float elapsedTime)
+    {
+        foreach (var seg in _phaseSegments)
+        {
+            if (elapsedTime >= seg.startTime && elapsedTime < seg.startTime + seg.duration)
+            {
+                return seg;
+            }
+        }
+        
+        // デフォルトはラストセグメント
+        if (_phaseSegments.Count > 0)
+            return _phaseSegments[_phaseSegments.Count - 1];
+        
+        return (Phase.NotePhase, 0f, 1f);
+    }
+    
+    /// <summary>
+    /// 指定時刻のフェーズを取得
+    /// 
+    /// 用途：フェーズ検知（UpdateGameTimer で _lastPhase と比較）
+    /// 効率：GetSegmentAtTime の Wrapper（戻り値から Phase のみ抽出）
+    /// </summary>
+    private Phase GetPhaseAtTime(float elapsedTime)
+    {
+        var seg = GetSegmentAtTime(elapsedTime);
+        return seg.phase;
+    }
+    
+    /// <summary>
+    /// 現在のフェーズセグメント内での進度（0～1）を取得
+    /// 
+    /// 用途：UIManager がスライダー値を計算（毎フレーム）
+    /// 計算：(経過時刻 - セグメント開始時刻) / セグメント継続時間
+    /// 例：Note フェーズ内で 3 秒経過した場合：3 / 10 = 0.3
+    /// </summary>
+    public float GetPhaseProgress()
+    {
+        if (_phaseSegments.Count == 0)
+            return 0f;
+        
+        float elapsedTime = GameConstants.GAME_DURATION - _gameTimer;
+        var seg = GetSegmentAtTime(elapsedTime);
+        
+        if (seg.duration <= 0)
+            return 0f;
+        
+        float elapsed = elapsedTime - seg.startTime;
+        return Mathf.Clamp01(elapsed / seg.duration);
     }
     
     /// <summary>
@@ -349,8 +537,6 @@ public class GameManager : MonoBehaviour
     private void EndGame()
     {
         _isGameRunning = false;
-        Time.timeScale = 1f;  // フリーズを解除
-        PhaseController.Instance.StopGame();
         
         // 画面上の音符をすべてクリーンアップ
         foreach (Transform child in notesContainer)
@@ -363,6 +549,21 @@ public class GameManager : MonoBehaviour
         
         int finalScore = ScoreManager.Instance.GetFinalScore();
         Debug.Log($"[GameManager] 🏁 Game ended! Final score: {finalScore}");
+    }
+    
+    /// <summary>
+    /// 現在のフェーズセグメントを取得（公開：UIManager / NotePrefab 用）
+    /// 
+    /// 用途：
+    ///   - NotePrefab.Start()：初期フェーズを取得して SetPhase() 実行
+    ///   - UIManager.OnPhaseChanged()：フェーズ変更後のセグメント情報を取得
+    /// 
+    /// 戻り値：(Phase, startTime, duration) のタプル
+    /// </summary>
+    public (Phase phase, float startTime, float duration) GetCurrentSegment()
+    {
+        float elapsedTime = GameConstants.GAME_DURATION - _gameTimer;
+        return GetSegmentAtTime(elapsedTime);
     }
     
     // ===== Getter =====
