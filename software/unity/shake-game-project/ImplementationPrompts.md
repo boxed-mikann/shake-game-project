@@ -5,11 +5,127 @@ Copilot に各段階の実装を依頼する際、以下のプロンプトを参
 
 ---
 
+## 🔧 UnityMCP 使用ガイド
+
+**重要：ファイル操作は以下のルールで実施**
+
+| 操作 | 方法 | 理由 |
+|------|------|------|
+| **ファイル作成（.cs）** | ❌ Copilot に `mkdir` 指示 ❌ | Copilot コマンド実行が不安定 |
+| **ファイル作成（.cs）** | ✅ **GitHub Copilot - UnityMCP `create_script`** | 安定した Unity 統合 |
+| **ファイル編集（内容追加）** | ✅ **通常の `replace_string_in_file`** | IDE ツール安定性 |
+| **ファイル削除** | ✅ **GitHub Copilot - UnityMCP `delete_script`** | 安定した Unity 統合 |
+
+### Copilot に指示するときのテンプレート
+
+```
+## ファイル作成は UnityMCP で実施してください
+
+以下のファイルを作成する際は、PowerShell コマンド（mkdir, New-Item）を使わず、
+GitHub Copilot - UnityMCP の create_script 機能を使ってください。
+
+指示例：
+「Assets/Scripts/Data/PhaseChangeData.cs を、以下の内容で作成してください。」
+
+その後、ファイルパスは以下の形式で Copilot に提供：
+- Assets/Scripts/Data/PhaseChangeData.cs （ローカルパス）
+- または unity://path/Assets/Scripts/Data/PhaseChangeData.cs （UnityMCP URI）
+```
+
+### UnityMCP コマンド リファレンス
+
+```csharp
+// ファイル作成（Copilot から指示）
+mcp_unitymcp_create_script(
+    path: "Assets/Scripts/Data/PhaseChangeData.cs",
+    contents: "using UnityEngine; [System.Serializable] ...",
+    namespace: null  // namespace は使わない
+)
+
+// ファイル削除（必要な場合）
+mcp_unitymcp_delete_script(
+    uri: "Assets/Scripts/Handlers/Phase1ShakeHandler.cs"
+)
+
+// ファイル編集（通常の replace_string_in_file を使用）
+// IDE 側で実施
+```
+
+---
+
+## フォルダ構成戦略
+
+**旧実装を参照可能にするため、新旧コードを明確に分離します：**
+
+```
+Assets/Scripts/
+├── FormerCodes/           ← 旧実装（参照用に保持）
+│   ├── Core/
+│   │   ├── GameManager.cs
+│   │   ├── GameConstants.cs
+│   │   └── ...
+│   ├── Game/
+│   │   ├── PhaseController.cs
+│   │   ├── NotePrefab.cs
+│   │   └── ...
+│   ├── Input/
+│   ├── UI/
+│   └── README.md           ← 旧実装の説明（参照方法記載）
+│
+├── Managers/              ← 新実装
+│   ├── GameManager.cs
+│   ├── PhaseManager.cs
+│   ├── FreezeManager.cs
+│   ├── ScoreManager.cs
+│   └── AudioManager.cs
+│
+├── Gameplay/
+│   ├── Note.cs
+│   ├── NotePool.cs
+│   ├── NoteManager.cs
+│   └── NoteSpawner.cs
+│
+├── Handlers/
+│   ├── Phase1ShakeHandler.cs
+│   ├── Phase2ShakeHandler.cs
+│   └── ...
+│
+├── Input/
+│   ├── SerialPortManager.cs
+│   ├── SerialInputReader.cs
+│   ├── KeyboardInputReader.cs
+│   └── ShakeResolver.cs
+│
+├── Audio/
+│   └── AudioManager.cs
+│
+├── UI/
+│   ├── PanelController.cs
+│   ├── ScoreDisplay.cs
+│   ├── PhaseProgressBar.cs
+│   └── FreezeEffectUI.cs
+│
+└── Data/
+    ├── PhaseChangeData.cs
+    ├── IInputSource.cs
+    ├── IShakeHandler.cs
+    └── GameConstants.cs
+```
+
+**メリット：**
+- ✅ 旧コードを参照できる（実装時に仕様確認）
+- ✅ 新旧が明確に分離（混在の危険なし）
+- ✅ デバッグ時に旧実装と比較可能
+- ✅ Git で `FormerCodes/` フォルダごと管理できる
+- ✅ 将来的に削除も容易
+
+---
+
 ## 【全段階共通】背景・参照設定
 
 ```
 ## 背景
-我々は Unity シェイクゲームの既存コードベース（Assets/Scripts/Core, Game, Input, UI）を、
+我々は Unity シェイクゲームの既存コードベース（Assets/Scripts/FormerCodes/）を、
 新しいイベント駆動アーキテクチャに再構築しています。
 
 機能は 100% 保持しながら、以下を実現します：
@@ -21,15 +137,23 @@ Copilot に各段階の実装を依頼する際、以下のプロンプトを参
 ## 参照資料
 1. **CodeArchitecture.md**（セクション 3 で各クラスの仕様定義）
 2. **旧コード**（以下のファイルから学ぶべき仕様）
-   - Assets/Scripts/Core/GameConstants.cs → 定数、フェーズシーケンス定義
-   - Assets/Scripts/Core/GameManager.cs → ゲームライフサイクル、フェーズ管理
-   - Assets/Scripts/Game/PhaseController.cs → フェーズ自動切り替え
-   - Assets/Scripts/Game/NotePrefab.cs → イベント購読、見た目更新
+   - Assets/Scripts/FormerCodes/Core/GameConstants.cs → 定数、フェーズシーケンス定義
+   - Assets/Scripts/FormerCodes/Core/GameManager.cs → ゲームライフサイクル、フェーズ管理
+   - Assets/Scripts/FormerCodes/Game/PhaseController.cs → フェーズ自動切り替え
+   - Assets/Scripts/FormerCodes/Game/NotePrefab.cs → イベント購読、見た目更新
 
 ## 実装フロー
 - セクション 3.x に記載の仕様に従う
 - 旧実装から機能・ロジック（duration, spawnFrequency, フェーズ種別等）を参考
 - 新アーキテクチャのイベント構造を採用
+
+## ⚠️ 重要：ファイル作成について
+**以下のファイル作成は UnityMCP を使用してください（Copilot の mkdir/New-Item は使わない）**
+
+各ステップで「Assets/Scripts/○○/**.cs」を作成する際：
+1. 作成するファイルのパス と コード内容を準備
+2. GitHub Copilot - UnityMCP の **create_script** 機能で作成
+3. 失敗時は IDE で手動作成し、その後編集コマンドで追加
 
 ```
 
@@ -43,7 +167,11 @@ Copilot に各段階の実装を依頼する際、以下のプロンプトを参
 
 CodeArchitecture.md セクション 3.0.1～3.0.3 を参照してください。
 
-### 作成するファイル
+### ⚠️ ファイル作成方法
+**以下のすべてのファイルは GitHub Copilot - UnityMCP の create_script で作成してください。**
+Copilot の mkdir/New-Item コマンドは使わないでください。
+
+### 作成するファイル（UnityMCP create_script で作成）
 
 #### 1. Assets/Scripts/Data/PhaseChangeData.cs
 - 構造体名：PhaseChangeData
@@ -71,6 +199,7 @@ CodeArchitecture.md セクション 3.0.1～3.0.3 を参照してください。
 
 #### 4. Assets/Scripts/Data/GameConstants.cs（改良版）
 - 既存の GameConstants を参考に、以下を確認：
+  - 参照元：Assets/Scripts/FormerCodes/Core/GameConstants.cs
   - PhaseConfig 構造体（phase, duration）
   - PHASE_SEQUENCE 配列（旧コード GameConstants.cs に従う）
   - SPAWN_RATE_BASE, LAST_SPRINT_MULTIPLIER 定数
@@ -106,7 +235,10 @@ CodeArchitecture.md セクション 3.1 を参照してください。
 - ステップ 1（Data/ フォルダ）が完了していること
 - PhaseChangeData, IInputSource, IShakeHandler が定義済み
 
-### 作成するファイル
+### ⚠️ ファイル作成方法
+**以下のすべてのファイルは GitHub Copilot - UnityMCP の create_script で作成してください。**
+
+### 作成するファイル（UnityMCP create_script で作成）
 
 #### 1. Assets/Scripts/Managers/GameManager.cs
 参照：CodeArchitecture.md セクション 3.1.1
@@ -141,7 +273,7 @@ CodeArchitecture.md セクション 3.1 を参照してください。
   - 各フェーズを yield return new WaitForSeconds(duration) で待機
   - 切り替え時に PhaseChangeData を構築して OnPhaseChanged.Invoke()
 - 実装時注意：
-  - 旧 GameManager.InitializePhaseSequence() ロジックを参考
+  - 参照元：Assets/Scripts/FormerCodes/Core/GameManager.cs の InitializePhaseSequence() ロジック
   - PHASE_SEQUENCE の各要素を PhaseConfig として処理
   - LastSprintPhase は PHASE_SEQUENCE に明示的に含まれる
   - spawnFrequency = 1 / SPAWN_RATE_BASE（フェーズに応じて倍率適用）
@@ -160,7 +292,7 @@ CodeArchitecture.md セクション 3.1 を参照してください。
   - Coroutine で duration 待機後に解除
   - LastSprintPhase 中は StartFreeze() は何もしない（無効）
 - 実装時注意：
-  - 旧 GameManager.TriggerFreeze() ロジックを参考
+  - 参照元：Assets/Scripts/FormerCodes/Core/GameManager.cs の TriggerFreeze() ロジック
   - _isFrozen フラグで状態管理
 
 #### 4. Assets/Scripts/Managers/ScoreManager.cs
@@ -176,7 +308,7 @@ CodeArchitecture.md セクション 3.1 を参照してください。
   - Phase*ShakeHandler から AddScore(points) で呼ばれる
   - スコア変更時に常に OnScoreChanged.Invoke(currentScore) を発火
 - 実装時注意：
-  - 旧実装で Note 処理時の加減点ロジックを参照
+  - 参照元：Assets/Scripts/FormerCodes/Game/ の Note 処理時の加減点ロジック
   - NotePhase: +1, RestPhase: -1（CodeArchitecture.md セクション 3.5 参照）
 
 #### 5. Assets/Scripts/Managers/AudioManager.cs
@@ -193,6 +325,7 @@ CodeArchitecture.md セクション 3.1 を参照してください。
 - 実装時注意：
   - Resources/Audio/ に "hit.wav" 等の SFX を配置
   - 初回ロード時にキャッシング（GC 削減）
+  - 参照元：Assets/Scripts/FormerCodes/Core/GameManager.cs の PlayBurstSound() ロジック
 
 ### CodeArchitecture.md 参照箇所
 - セクション 3.1: 全マネージャー仕様
@@ -220,7 +353,10 @@ CodeArchitecture.md セクション 3.2 を参照してください。
 - ステップ 1, 2 が完了していること
 - Managers/ の全クラスが実装済み
 
-### 作成するファイル
+### ⚠️ ファイル作成方法
+**以下のすべてのファイルは GitHub Copilot - UnityMCP の create_script で作成してください。**
+
+### 作成するファイル（UnityMCP create_script で作成）
 
 #### 1. Assets/Scripts/Gameplay/Note.cs
 参照：CodeArchitecture.md セクション 3.2.1
@@ -234,7 +370,7 @@ CodeArchitecture.md セクション 3.2 を参照してください。
   - public void SetPhase(Phase phase) - フェーズに応じて Sprite 更新
   - public Phase GetCurrentPhase() - 現在フェーズ取得
 - 実装時注意：
-  - 旧 NotePrefab.cs を参考（OnPhaseChanged ハンドラ）
+  - 参照元：Assets/Scripts/FormerCodes/Game/NotePrefab.cs（OnPhaseChanged ハンドラ）
   - 処理ロジックは含めない（Handlers が担当）
   - [SerializeField] で noteSprite, restSprite を設定可能に
 
@@ -289,7 +425,7 @@ CodeArchitecture.md セクション 3.2 を参照してください。
   - yield return new WaitForSeconds(frequency) で定期生成
   - NotePool.GetNote(), NoteManager.AddNote() でスポーン登録
 - 実装時注意：
-  - 旧 GameManager.UpdateNoteSpawning() + SpawnNote() ロジックを参考
+  - 参照元：Assets/Scripts/FormerCodes/Core/GameManager.cs の UpdateNoteSpawning() + SpawnNote() ロジック
   - LastSprintPhase 検出：phaseData.phaseType == Phase.LastSprintPhase
   - 前のフェーズの Coroutine は StopCoroutine() で停止
 
@@ -318,7 +454,10 @@ CodeArchitecture.md セクション 3.5 を参照してください。
 - ステップ 1～3 が完了していること
 - NoteManager, AudioManager, FreezeManager, ScoreManager が実装済み
 
-### 作成するファイル
+### ⚠️ ファイル作成方法
+**以下のすべてのファイルは GitHub Copilot - UnityMCP の create_script で作成してください。**
+
+### 作成するファイル（UnityMCP create_script で作成）
 
 #### IShakeHandler の実装パターン
 
@@ -359,7 +498,7 @@ public class Phase<X>ShakeHandler : IShakeHandler
 
 #### フェーズごとの実装差分
 
-旧コード参照：
+参照元：Assets/Scripts/FormerCodes/ の旧実装より、フェーズ別の処理を確認
 - NotePhase: _scoreValue = +1, _freezeDuration = 0（フリーズなし）
 - RestPhase: _scoreValue = -1, _freezeDuration = 長め（フリーズあり）
 - LastSprintPhase: _scoreValue = +2（ボーナス），_freezeDuration = 0
@@ -404,7 +543,10 @@ CodeArchitecture.md セクション 3.4 を参照してください。
 - IInputSource, IShakeHandler が定義済み
 - Phase*ShakeHandler がすべて実装済み
 
-### 作成するファイル
+### ⚠️ ファイル作成方法
+**以下のすべてのファイルは GitHub Copilot - UnityMCP の create_script で作成してください。**
+
+### 作成するファイル（UnityMCP create_script で作成）
 
 #### 1. Assets/Scripts/Input/SerialPortManager.cs
 参照：CodeArchitecture.md セクション 3.4.1
@@ -423,6 +565,7 @@ CodeArchitecture.md セクション 3.4 を参照してください。
   - GameConstants.SERIAL_PORT_NAME, SERIAL_BAUD_RATE を使用
   - SerialPort は using System.IO.Ports
   - 例外処理：ポート存在確認等
+  - 参照元：Assets/Scripts/FormerCodes/ のシリアル通信実装
 
 #### 2. Assets/Scripts/Input/SerialInputReader.cs
 参照：CodeArchitecture.md セクション 3.4.2
@@ -509,7 +652,10 @@ CodeArchitecture.md セクション 3.6 を参照してください。
 - ステップ 1～5 が完了していること
 - Managers/ の全クラスが実装済み
 
-### 作成するファイル
+### ⚠️ ファイル作成方法
+**以下のすべてのファイルは GitHub Copilot - UnityMCP の create_script で作成してください。**
+
+### 作成するファイル（UnityMCP create_script で作成）
 
 #### 1. Assets/Scripts/UI/PanelController.cs
 参照：CodeArchitecture.md セクション 3.6.1
@@ -537,6 +683,7 @@ CodeArchitecture.md セクション 3.6 を参照してください。
 - 実装時注意：
   - [SerializeField] で TextMeshProUGUI scoreText を設定
   - OnScoreChanged(int score) で scoreText.text = score.ToString()
+  - 参照元：Assets/Scripts/FormerCodes/UI/ のスコア表示実装
 
 #### 3. Assets/Scripts/UI/PhaseProgressBar.cs
 参照：CodeArchitecture.md セクション 3.6.3
