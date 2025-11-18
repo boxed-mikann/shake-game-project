@@ -100,9 +100,9 @@ public static class GameConstants
     public const float LAST_SPRINT_MULTIPLIER = 2f;
     
     // ===== Scoring =====
-    public const int NOTE_SCORE = 100;                  // 音符をはじけた時のスコア
-    public const int REST_PENALTY = -50;                // 休符をはじけた時のペナルティ
-    public const int PERFECT_BONUS = 500;               // 完璧プレイボーナス（休符ノーミス）
+    public const int NOTE_SCORE = 1;                  // 音符をはじけた時のスコア
+    public const int REST_PENALTY = 0;                // 休符をはじけた時のペナルティ
+    public const int PERFECT_BONUS = 50;               // 完璧プレイボーナス（休符ノーミス）
     
     // ===== Freeze（フリーズ - フェーズとは別管理） =====
     /// <summary>
