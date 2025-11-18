@@ -83,7 +83,7 @@ void Update() {
   **回答**: PhaseManagerと同様の構造にし、「状態管理の基底クラス」を共通化するか、別の専門マネージャー(`FreezeManager`)として独立させる。凍結中はイベント購読側で入力を無視する仕組みが簡潔。
   
   →「状態管理の基底クラス」を採用して、可読性を高められるか？
-  **補足**（基底クラス採用の場合）: `StateManager<T>`のような汎用基底クラスで時間管理・イベント発行を共通化。PhaseManagerとFreezeManagerはそれぞれ専用のStateData型を持たせるとDRY原則に従える。
+  **補足**（基底クラス採用）: `StateManager<T>`のような汎用基底クラスで時間管理・イベント発行を共通化。PhaseManagerとFreezeManagerはそれぞれ専用のStateData型を持たせるとDRY原則に従える。→採用
 
 #### シェイクデータのHandleShake関数を配線するやつ
 - イベントを購読して、HandleShakeを配線しかえる。
