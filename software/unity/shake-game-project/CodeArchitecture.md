@@ -99,15 +99,26 @@ public interface IShakeHandler {
 ---
 
 ### 3.1 Managers/
+
+#### GameManager.cs
 - **責務**：ゲーム全体のライフサイクル管理
 - **重要イベント**：
+  - `public static UnityEvent OnShowTitle;` - タイトル画面表示（起動時・復帰時共通）
   - `public static UnityEvent OnGameStart;` - ゲーム開始
   - `public static UnityEvent OnGameOver;` - ゲーム終了
 - **実装方式**：シングルトン + staticなUnityEvent<T>
 - **機能**：
   - ゲーム開始・終了の状態管理
+  - タイトル画面表示と全システムリセット
   - PhaseManager の実行を制御
   - 各マネージャーの初期化・クリーンアップ
+- **重要メソッド**：
+  - `ShowTitle()` - タイトル画面表示＋状態リセット（起動時・復帰時共通）
+  - `StartGame()` - ゲーム開始
+  - `EndGame()` - ゲーム終了
+- **Start()メソッド**：
+  - アプリ起動時に自動的に`ShowTitle()`を呼び出し
+  - DRY原則：起動時とタイトル復帰を統一処理
 - **備考**：UI層やマネージャーがこのイベントを購読
 
 #### PhaseManager.cs
@@ -118,9 +129,14 @@ public interface IShakeHandler {
   - `Phase_Sequence[]`配列を順に進行
   - Coroutineで各フェーズの継続時間を管理
   - フェーズ切り替え時に`OnPhaseChanged`を発行
+  - タイトル復帰時に状態をリセット
 - **重要メソッド**：
   - `IEnumerator ExecutePhase(Phase_Sequence phase)` - フェーズ実行
   - `Phase_Sequence GetCurrentPhase()` - 現在フェーズ取得（プロパティ）
+  - `ResetPhaseManager()` - 状態リセット（Coroutine停止、変数初期化）
+- **イベント購読**：
+  - `GameManager.OnGameStart` → フェーズシーケンス開始
+  - `GameManager.OnShowTitle` → 状態リセット
 - **イベント発行例**：
   ```csharp
   PhaseChangeData data = new PhaseChangeData {
@@ -141,6 +157,11 @@ public interface IShakeHandler {
   - `StartFreeze(float duration)` - 凍結開始
   - Coroutineで時間経過を管理
   - 凍結中/解除時にイベント発行
+  - タイトル復帰時に凍結状態をリセット
+- **重要メソッド**：
+  - `ResetFreezeState()` - 凍結状態リセット（Coroutine停止、状態解除）
+- **イベント購読**：
+  - `GameManager.OnShowTitle` → 凍結状態リセット
 - **イベント**：
   - `public UnityEvent<bool> OnFreezeChanged;` - true=凍結開始、false=凍結解除
 
@@ -149,6 +170,12 @@ public interface IShakeHandler {
 - **機能**：
   - `AddScore(int points)` - スコア加算
   - スコア変更時にイベント発行
+  - ゲーム開始時・タイトル復帰時にスコアをリセット
+- **重要メソッド**：
+  - `Initialize()` - スコアリセット（ゲーム開始時・タイトル復帰時共通）
+- **イベント購読**：
+  - `GameManager.OnGameStart` → スコアリセット
+  - `GameManager.OnShowTitle` → スコアリセット
 - **イベント**：
   - `public UnityEvent<int> OnScoreChanged;` - 現在スコアを引数
 
@@ -189,14 +216,18 @@ public interface IShakeHandler {
   - `IInputSource`のキューから`TryDequeue()`で直接取り出し
   - `IShakeHandler currentHandler`を呼び出す（分岐なし・最速）
   - フェーズ変更イベントを購読して`currentHandler`を差し替え（Strategy パターン）
+  - タイトル復帰時に入力キューとハンドラーをリセット
 - **パフォーマンス最適化**：
   - フェーズ変更時（数秒に1回）にハンドラーを差し替え
   - シェイク処理時（秒間数十回）は分岐なしで`currentHandler.HandleShake()`を呼ぶだけ
   - UnityEvent経由なし、約3倍高速化（30 cycles → 10 cycles）
+- **重要メソッド**：
+  - `ResetResolver()` - 入力キューをクリア、ハンドラーをリセット
 - **イベント購読**：
   - `PhaseManager.OnPhaseChanged`を購読
   - `phaseData.phaseType`に応じて対応するハンドラーを`currentHandler`に割り当て
   - 以後の入力は自動的に新しいハンドラーで処理
+  - `GameManager.OnShowTitle` → 入力キューとハンドラーをリセット
 - **入力ソース切り替え**：
   - `GameConstants.DEBUG_MODE`に応じてKeyboardInputReaderまたはSerialInputReaderを自動選択
   - Inspector設定不要（実行時に自動切り替え）
@@ -254,6 +285,12 @@ public interface IShakeHandler {
   - Coroutineで定期的に音符をSpawn
   - `NotePool.GetNote()`でインスタンス取得
   - 音符の初期位置・Spriteデータを設定
+  - タイトル復帰時にスポーンを停止
+- **重要メソッド**：
+  - `StopSpawning()` - スポーンCoroutineを停止
+- **イベント購読**：
+  - `PhaseManager.OnPhaseChanged` → スポーン開始/変更
+  - `GameManager.OnShowTitle` → スポーン停止
 - **実装例**：
   ```csharp
   void OnPhaseChanged(PhaseChangeData phaseData) {
@@ -289,6 +326,12 @@ public interface IShakeHandler {
   - `RegisterNote(Note note)` - NoteSpawnerから新規Noteを登録
   - `GetOldestNote()` - 最も古いNoteを取得（シェイク時に破棄される対象）
   - `RemoveNote(Note note)` - 画面外移動等で削除
+  - ゲーム開始時・タイトル復帰時にアクティブNoteをクリア
+- **重要メソッド**：
+  - `ClearAllNotes()` - 全Noteをプールに返却（ゲーム開始時・タイトル復帰時共通）
+- **イベント購読**：
+  - `GameManager.OnGameStart` → 全Noteクリア
+  - `GameManager.OnShowTitle` → 全Noteクリア
 - **実装詳細**：
   ```csharp
   private Queue<Note> activeNotes = new Queue<Note>();
@@ -389,10 +432,12 @@ public interface IShakeHandler {
 #### PanelController.cs
 - **責補**：画面（タイトル/プレイ/リザルト）の表示・非表示管理
 - **機能**：
+  - `GameManager.OnShowTitle`を購読 → タイトルパネルをアクティベート
   - `GameManager.OnGameStart`を購読 → プレイパネルをアクティベート
   - `GameManager.OnGameOver`を購読 → リザルトパネルをアクティベート
 - **実装**：
   - `CanvasGroup`で各パネルの表示を制御
+  - Start()では全パネルを非表示に設定（イベント駆動で表示）
   - 必要に応じてアニメーション付与
 
 #### ScoreDisplay.cs
@@ -536,6 +581,7 @@ Assets/
 
 | マネージャー | イベント名 | 引数型 | 引数内容 | 発行タイミング |
 |---|---|---|---|---|
+| GameManager | OnShowTitle | - | なし | アプリ起動時、ゲーム終了後のタイトル復帰時 |
 | GameManager | OnGameStart | - | なし | ゲーム開始ボタン押下 |
 | GameManager | OnGameOver | - | なし | ゲーム終了 |
 | PhaseManager | OnPhaseChanged | PhaseChangeData | phaseType, duration, spawnFrequency, phaseIndex | フェーズ切り替え時 |
@@ -546,6 +592,15 @@ Assets/
 - `PhaseChangeData`構造体を使用することで、複数の関連情報を1つのイベント引数で安全に渡せる
 - **PhaseManagerがOnPhaseChangedを発行**することで、責務が明確に分離される
 - ShakeResolver, NoteSpawner, UI層は`PhaseManager.OnPhaseChanged`を購読
+- **GameManager.OnShowTitle**は、アプリ起動時とタイトル復帰時の両方で使用される（DRY原則）
+- **全マネージャー**が`OnShowTitle`を購読して状態をリセット：
+  - PanelController: タイトルパネル表示
+  - PhaseManager: Coroutine停止、状態変数リセット
+  - ScoreManager: スコアリセット
+  - FreezeManager: 凍結状態解除
+  - NoteManager: アクティブNoteをプールに返却
+  - NoteSpawner: スポーンCoroutine停止
+  - ShakeResolver: 入力キュークリア、ハンドラーリセット
 
 ---
 
@@ -596,6 +651,10 @@ Assets/
 2. **入力系統** - IInputSource実装（SerialInputReader, KeyboardInputReader）およびShakeResolver最適化完了
 3. **ハンドラー統合** - Phase1-7ShakeHandlerを廃止し、NoteShakeHandlerとRestShakeHandlerに統合（71%削減）
 4. **パフォーマンス最適化** - UnityEvent廃止による約3倍高速化達成
+5. **タイトル画面復帰機能** - GameManager.OnShowTitleイベントによる完全リセット機能実装完了（2025-11-19）
+   - DRY原則に基づき、起動時とタイトル復帰を統一処理
+   - 全マネージャーの状態リセット処理実装
+   - イベント駆動設計により、疎結合を維持したまま実装
 
 ### 9.2 今後の開発方針
 - このドキュメントをAI参照用の正確な設計書として維持

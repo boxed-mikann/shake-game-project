@@ -23,13 +23,27 @@ public class PanelController : MonoBehaviour
     void Start()
     {
         // GameManager のイベントを購読
+        GameManager.OnShowTitle.AddListener(OnShowTitle);
         GameManager.OnGameStart.AddListener(OnGameStart);
         GameManager.OnGameOver.AddListener(OnGameOver);
         
-        // 初期状態：タイトルパネルのみ表示
+        // 初期状態は全パネル非表示（OnShowTitleイベントで表示される）
+        HidePanel(_titlePanel);
+        HidePanel(_playPanel);
+        HidePanel(_resultPanel);
+    }
+    
+    /// <summary>
+    /// タイトル画面表示時のハンドラ
+    /// </summary>
+    private void OnShowTitle()
+    {
         ShowPanel(_titlePanel);
         HidePanel(_playPanel);
         HidePanel(_resultPanel);
+        
+        if (GameConstants.DEBUG_MODE)
+            Debug.Log("[PanelController] Showing title panel");
     }
     
     /// <summary>
@@ -87,6 +101,8 @@ public class PanelController : MonoBehaviour
     void OnDestroy()
     {
         // イベント購読解除
+        if (GameManager.OnShowTitle != null)
+            GameManager.OnShowTitle.RemoveListener(OnShowTitle);
         if (GameManager.OnGameStart != null)
             GameManager.OnGameStart.RemoveListener(OnGameStart);
         if (GameManager.OnGameOver != null)

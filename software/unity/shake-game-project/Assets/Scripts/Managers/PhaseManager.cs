@@ -64,12 +64,14 @@ public class PhaseManager : MonoBehaviour
     {
         // GameManager.OnGameStart を購読
         GameManager.OnGameStart.AddListener(OnGameStart);
+        GameManager.OnShowTitle.AddListener(ResetPhaseManager);
     }
     
     private void OnDisable()
     {
         // イベント購読解除
         GameManager.OnGameStart.RemoveListener(OnGameStart);
+        GameManager.OnShowTitle.RemoveListener(ResetPhaseManager);
     }
     
     /// <summary>
@@ -159,5 +161,26 @@ public class PhaseManager : MonoBehaviour
     public int GetCurrentPhaseIndex()
     {
         return _currentPhaseIndex;
+    }
+    
+    /// <summary>
+    /// PhaseManagerの状態をリセット
+    /// タイトル画面復帰時に呼ばれる
+    /// </summary>
+    private void ResetPhaseManager()
+    {
+        // Coroutine停止
+        if (_phaseSequenceCoroutine != null)
+        {
+            StopCoroutine(_phaseSequenceCoroutine);
+            _phaseSequenceCoroutine = null;
+        }
+        
+        // 状態変数リセット
+        _currentPhaseIndex = -1;
+        _currentPhase = Phase.NotePhase;
+        
+        if (GameConstants.DEBUG_MODE)
+            Debug.Log("[PhaseManager] Reset to initial state");
     }
 }

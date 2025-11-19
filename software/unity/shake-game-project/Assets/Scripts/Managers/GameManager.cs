@@ -35,6 +35,7 @@ public class GameManager : MonoBehaviour
     }
     
     // 静的イベント（全システムがアクセス可能）
+    public static UnityEvent OnShowTitle = new UnityEvent();
     public static UnityEvent OnGameStart = new UnityEvent();
     public static UnityEvent OnGameOver = new UnityEvent();
     
@@ -53,6 +54,32 @@ public class GameManager : MonoBehaviour
         
         if (GameConstants.DEBUG_MODE)
             Debug.Log("[GameManager] Initialized");
+    }
+    
+    private void Start()
+    {
+        ShowTitle();  // 起動時に自動表示
+    }
+    
+    /// <summary>
+    /// タイトル画面を表示
+    /// アプリ起動時とゲーム終了後のタイトル復帰時に使用
+    /// </summary>
+    public static void ShowTitle()
+    {
+        if (Instance == null)
+        {
+            Debug.LogError("[GameManager] Instance not found!");
+            return;
+        }
+        
+        Instance._isGameRunning = false;
+        
+        if (GameConstants.DEBUG_MODE)
+            Debug.Log("[GameManager] 📺 Showing title screen");
+        
+        // タイトル表示イベント発行
+        OnShowTitle.Invoke();
     }
     
     /// <summary>

@@ -53,12 +53,14 @@ public class NoteManager : MonoBehaviour
     {
         // GameManager.OnGameStart を購読してリセット
         GameManager.OnGameStart.AddListener(ClearAllNotes);
+        GameManager.OnShowTitle.AddListener(ClearAllNotes);
     }
     
     private void OnDisable()
     {
         // イベント購読解除
         GameManager.OnGameStart.RemoveListener(ClearAllNotes);
+        GameManager.OnShowTitle.RemoveListener(ClearAllNotes);
     }
     
     /// <summary>

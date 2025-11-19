@@ -176,25 +176,31 @@ private void OnDisable() {
 #### 【実装チェックリスト】
 
 **GameManager.cs**
-- [ ] `OnShowTitle`イベントを宣言部分に追加
-- [ ] `ShowTitle()`メソッドを追加
-- [ ] `Start()`メソッドに`ShowTitle()`呼び出しを追加
+- [x] `OnShowTitle`イベントを宣言部分に追加
+- [x] `ShowTitle()`メソッドを追加
+- [x] `Start()`メソッドに`ShowTitle()`呼び出しを追加
 
 **PanelController.cs**
-- [ ] `Start()`から直接のパネル表示コードを削除（3行削除）
-- [ ] `Start()`に全パネル非表示処理を追加（3行追加）
-- [ ] `OnShowTitle`イベントの購読を追加
-- [ ] `OnShowTitle()`ハンドラーを実装
-- [ ] `OnDestroy()`に`OnShowTitle`の購読解除を追加
+- [x] `Start()`から直接のパネル表示コードを削除（3行削除）
+- [x] `Start()`に全パネル非表示処理を追加（3行追加）
+- [x] `OnShowTitle`イベントの購読を追加
+- [x] `OnShowTitle()`ハンドラーを実装
+- [x] `OnDestroy()`に`OnShowTitle`の購読解除を追加
 
 **PhaseManager.cs**
-- [ ] `OnEnable()`に`OnShowTitle`の購読を追加
-- [ ] `OnDisable()`に`OnShowTitle`の購読解除を追加
-- [ ] `ResetPhaseManager()`メソッドを実装
+- [x] `OnEnable()`に`OnShowTitle`の購読を追加
+- [x] `OnDisable()`に`OnShowTitle`の購読解除を追加
+- [x] `ResetPhaseManager()`メソッドを実装
 
 **ScoreManager.cs**
-- [ ] `OnEnable()`に`OnShowTitle`の購読を追加
-- [ ] `OnDisable()`に`OnShowTitle`の購読解除を追加
+- [x] `OnEnable()`に`OnShowTitle`の購読を追加
+- [x] `OnDisable()`に`OnShowTitle`の購読解除を追加
+
+**その他のマネージャー（追加実装）**
+- [x] `FreezeManager.cs`: `OnShowTitle`購読とリセット処理を追加
+- [x] `NoteManager.cs`: `OnShowTitle`購読でClearAllNotesを呼び出し
+- [x] `NoteSpawner.cs`: `OnShowTitle`購読でCoroutineを停止
+- [x] `ShakeResolver.cs`: `OnShowTitle`購読で入力キューとハンドラーをリセット
 
 **UnityEditor**
 - [ ] ResultPanel内のGoTitleButtonのOnClickに`GameManager.ShowTitle`を設定

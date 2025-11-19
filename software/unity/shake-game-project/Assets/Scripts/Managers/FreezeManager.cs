@@ -56,6 +56,41 @@ public class FreezeManager : MonoBehaviour
             Debug.Log("[FreezeManager] Initialized");
     }
     
+    private void OnEnable()
+    {
+        // タイトル復帰時にリセット
+        GameManager.OnShowTitle.AddListener(ResetFreezeState);
+    }
+    
+    private void OnDisable()
+    {
+        // イベント購読解除
+        GameManager.OnShowTitle.RemoveListener(ResetFreezeState);
+    }
+    
+    /// <summary>
+    /// フリーズ状態をリセット
+    /// </summary>
+    private void ResetFreezeState()
+    {
+        // Coroutine停止
+        if (_freezeCoroutine != null)
+        {
+            StopCoroutine(_freezeCoroutine);
+            _freezeCoroutine = null;
+        }
+        
+        // 凍結解除
+        if (_isFrozen)
+        {
+            _isFrozen = false;
+            OnFreezeChanged.Invoke(false);
+        }
+        
+        if (GameConstants.DEBUG_MODE)
+            Debug.Log("[FreezeManager] Reset to initial state");
+    }
+    
     /// <summary>
     /// フリーズ開始
     /// </summary>

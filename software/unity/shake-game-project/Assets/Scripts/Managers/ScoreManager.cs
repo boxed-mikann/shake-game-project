@@ -59,12 +59,14 @@ public class ScoreManager : MonoBehaviour
     {
         // GameManager.OnGameStart を購読してスコアをリセット
         GameManager.OnGameStart.AddListener(Initialize);
+        GameManager.OnShowTitle.AddListener(Initialize);
     }
     
     private void OnDisable()
     {
         // イベント購読解除
         GameManager.OnGameStart.RemoveListener(Initialize);
+        GameManager.OnShowTitle.RemoveListener(Initialize);
     }
     
     /// <summary>

@@ -39,6 +39,27 @@ public class ShakeResolver : MonoBehaviour
         {
             Debug.LogError("[ShakeResolver] PhaseManager instance not found!");
         }
+        
+        // GameManager.OnShowTitle購読
+        GameManager.OnShowTitle.AddListener(ResetResolver);
+    }
+    
+    /// <summary>
+    /// ShakeResolverの状態をリセット
+    /// </summary>
+    private void ResetResolver()
+    {
+        // 入力キューをクリア（TryDequeueで全て取り出す）
+        if (_activeInputSource != null)
+        {
+            while (_activeInputSource.TryDequeue(out _)) { }
+        }
+        
+        // ハンドラーをデフォルト状態に戻す
+        _currentHandler = null;
+        
+        if (GameConstants.DEBUG_MODE)
+            Debug.Log("[ShakeResolver] Reset to initial state");
     }
     
     void Update()
@@ -96,5 +117,7 @@ public class ShakeResolver : MonoBehaviour
         {
             PhaseManager.OnPhaseChanged.RemoveListener(OnPhaseChanged);
         }
+        
+        GameManager.OnShowTitle.RemoveListener(ResetResolver);
     }
 }

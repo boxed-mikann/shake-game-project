@@ -67,12 +67,29 @@ public class NoteSpawner : MonoBehaviour
     {
         // PhaseManager.OnPhaseChanged を購読
         PhaseManager.OnPhaseChanged.AddListener(OnPhaseChanged);
+        GameManager.OnShowTitle.AddListener(StopSpawning);
     }
     
     private void OnDisable()
     {
         // イベント購読解除
         PhaseManager.OnPhaseChanged.RemoveListener(OnPhaseChanged);
+        GameManager.OnShowTitle.RemoveListener(StopSpawning);
+    }
+    
+    /// <summary>
+    /// スポーンを停止（タイトル復帰時）
+    /// </summary>
+    private void StopSpawning()
+    {
+        if (_spawnCoroutine != null)
+        {
+            StopCoroutine(_spawnCoroutine);
+            _spawnCoroutine = null;
+        }
+        
+        if (GameConstants.DEBUG_MODE)
+            Debug.Log("[NoteSpawner] Spawning stopped");
     }
     
     /// <summary>
