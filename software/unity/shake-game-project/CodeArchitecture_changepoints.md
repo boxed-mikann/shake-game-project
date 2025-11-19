@@ -139,6 +139,66 @@
 
 ---
 
+### 2025-11-19: UI表示機能の追加と不具合修正（ImplementationTasks.md 修正1～5）
+**ステータス**: ✅ CodeArchitecture.mdに反映済み
+
+#### 変更内容
+1. **修正1: 休符モードで生成された音符が休符画像になっていない**
+   - NoteSpawner.cs: `_currentPhase`フィールド追加
+   - NoteSpawner.OnPhaseChanged(): 先頭で`_currentPhase`を更新
+   - NoteSpawner.SpawnOneNote(): `note.SetPhase(_currentPhase)`呼び出しを追加
+
+2. **修正2: ラストスパートでもフリーズを有効にする**
+   - FreezeManager.StartFreeze(): LastSprintPhase無効化ブロックを削除
+   - FreezeManager.cs: クラスドキュメントから該当記述を削除
+
+3. **修正3: ゲーム全体のタイマー表示（TextMeshPro）**
+   - TimerDisplay.cs: 新規作成（Assets/Scripts/UI/TimerDisplay.cs）
+   - GameManager.OnGameStart/OnShowTitleを購読
+   - GAME_DURATIONからカウントダウン表示
+   - StringBuilderでGC削減
+
+4. **修正4: フェーズ表示（TextMeshPro）**
+   - PhaseDisplay.cs: 新規作成（Assets/Scripts/UI/PhaseDisplay.cs）
+   - PhaseManager.OnPhaseChangedを購読
+   - フェーズ名を表示（♪ 音符フェーズ、💤 休符フェーズ、🔥 ラストスパート）
+   - StringBuilderでGC削減
+
+5. **修正5: 最終スコア表示（TextMeshPro）**
+   - ResultScoreDisplay.cs: 新規作成（Assets/Scripts/UI/ResultScoreDisplay.cs）
+   - GameManager.OnGameOverを購読
+   - ScoreManagerから最終スコアを取得して表示
+   - StringBuilderでGC削減
+
+#### 理由
+- 修正1: RestPhase中に生成される音符が、生成直後は音符画像のまま表示される不具合を修正
+- 修正2: LastSprintPhase中もフリーズを有効にすることでゲームバランスを改善
+- 修正3～5: ゲーム中の情報表示が不足しているため、ユーザビリティ向上のためUI追加
+
+#### 設計原則の準拠
+- **イベント駆動設計**: GameManager/PhaseManagerのイベントを購読
+- **責務分離**: 各UIクラスは単一の表示責務を持つ
+- **疎結合**: シングルトン参照を最小化、イベント経由で通信
+- **メモリリーク防止**: OnDestroy()で必ずイベント購読解除
+- **GC削減**: StringBuilderを再利用
+
+#### 影響範囲
+- NoteSpawner.cs: フィールド追加、メソッド修正
+- FreezeManager.cs: コード削除、ドキュメント修正
+- TimerDisplay.cs: 新規作成
+- PhaseDisplay.cs: 新規作成
+- ResultScoreDisplay.cs: 新規作成
+
+#### 反映日
+2025-11-19 - CodeArchitecture.md 以下のセクションに反映完了：
+- セクション 3.3: NoteSpawner.cs（生成時のフェーズ設定処理追加、実装例更新、備考追加）
+- セクション 3.1: FreezeManager.cs（LastSprintPhase無効化の削除、備考追加）
+- セクション 3.6: UI/ - TimerDisplay.cs, PhaseDisplay.cs, ResultScoreDisplay.cs 追加（各クラスの詳細説明）
+- セクション 4: フォルダ構成 - UI層に新規クラス3つ追加（コメント付き）
+- セクション 9.1: 実装状況 - UI表示機能追加を完了項目7として追加（全修正内容を詳細に記載）
+
+---
+
 ## 今後の変更記録用テンプレート
 
 ### YYYY-MM-DD: [変更タイトル]

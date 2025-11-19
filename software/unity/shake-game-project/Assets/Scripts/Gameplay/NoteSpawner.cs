@@ -26,6 +26,7 @@ public class NoteSpawner : MonoBehaviour
     [SerializeField] private Vector2 spawnRangeY = new Vector2(-4f, 4f);    // Y座標の範囲
     
     private Coroutine _spawnCoroutine = null;
+    private Phase _currentPhase = Phase.NotePhase;
     
     // シングルトンインスタンス
     private static NoteSpawner _instance;
@@ -97,6 +98,8 @@ public class NoteSpawner : MonoBehaviour
     /// </summary>
     private void OnPhaseChanged(PhaseChangeData phaseData)
     {
+        _currentPhase = phaseData.phaseType;
+        
         // 前のフェーズの Coroutine を停止
         if (_spawnCoroutine != null)
         {
@@ -188,6 +191,9 @@ public class NoteSpawner : MonoBehaviour
             if (GameConstants.DEBUG_MODE)
                 Debug.Log($"[NoteSpawner] Spawned note with sprite ID: {randomID}");
         }
+        
+        // 現在のフェーズを設定（生成時に正しい画像を表示）
+        note.SetPhase(_currentPhase);
         
         // ランダムカラー設定
         SpriteRenderer sr = note.GetComponent<SpriteRenderer>();

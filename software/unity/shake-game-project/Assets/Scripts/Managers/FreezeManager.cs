@@ -10,7 +10,6 @@ using System.Collections;
 /// 責務：フリーズエフェクト（画面フラッシュ、入力禁止）の管理
 /// - Phase*ShakeHandler から StartFreeze(duration) で呼ばれる
 /// - Coroutine で duration 待機後に解除
-/// - LastSprintPhase 中は StartFreeze() は何もしない（無効）
 /// 
 /// イベント発行：
 /// - OnFreezeChanged(bool) → UI層に通知（true=凍結開始、false=凍結解除）
@@ -101,15 +100,6 @@ public class FreezeManager : MonoBehaviour
         {
             if (GameConstants.DEBUG_MODE)
                 Debug.Log("[FreezeManager] Already frozen, skipping...");
-            return;
-        }
-        
-        // LastSprintPhase 中は凍結しない（無効化）
-        if (PhaseManager.Instance != null && 
-            PhaseManager.Instance.GetCurrentPhase() == Phase.LastSprintPhase)
-        {
-            if (GameConstants.DEBUG_MODE)
-                Debug.Log("[FreezeManager] LastSprintPhase detected, freeze disabled");
             return;
         }
         

@@ -154,7 +154,7 @@ public interface IShakeHandler {
 #### FreezeManager.cs
 - **責務**：凍結状態（数秒間入力無視）を管理
 - **機能**：
-  - `StartFreeze(float duration)` - 凍結開始
+  - `StartFreeze(float duration)` - 凍結開始（全フェーズで有効）
   - Coroutineで時間経過を管理
   - 凍結中/解除時にイベント発行
   - タイトル復帰時に凍結状態をリセット
@@ -164,6 +164,8 @@ public interface IShakeHandler {
   - `GameManager.OnShowTitle` → 凍結状態リセット
 - **イベント**：
   - `public UnityEvent<bool> OnFreezeChanged;` - true=凍結開始、false=凍結解除
+- **備考**：
+  - LastSprintPhaseを含む全フェーズでフリーズが有効（以前は無効化されていた）
 
 #### ScoreManager.cs
 - **責務**：スコア累積・イベント発行
@@ -314,12 +316,13 @@ public interface IShakeHandler {
   - Coroutineで定期的に音符をSpawn
   - `NotePool.GetNote()`でインスタンス取得
   - 音符の初期位置・ランダムカラー・**ランダムSprite ID**を設定
+  - **生成時のフェーズ設定**: 現在のフェーズを保持し、生成時に`note.SetPhase(_currentPhase)`を呼び出して正しい画像を即座に表示
   - タイトル復帰時にスポーンを停止
 - **重要メソッド**：
   - `StopSpawning()` - スポーンCoroutineを停止
-  - `SpawnOneNote()` - 音符を1個生成（位置、回転、色、**Sprite ID**を設定）
+  - `SpawnOneNote()` - 音符を1個生成（位置、回転、色、**Sprite ID**、**フェーズ**を設定）
 - **イベント購読**：
-  - `PhaseManager.OnPhaseChanged` → スポーン開始/変更
+  - `PhaseManager.OnPhaseChanged` → スポーン開始/変更、現在フェーズを記録
   - `GameManager.OnShowTitle` → スポーン停止
 - **実装例**：
   ```csharp
@@ -345,6 +348,9 @@ public interface IShakeHandler {
           note.SetSpriteID(randomID);
       }
       
+      // ★ 現在のフェーズを設定（生成時に正しい画像を表示）
+      note.SetPhase(_currentPhase);
+      
       // ランダムカラー設定...
       // NoteManager登録...
   }
@@ -353,6 +359,7 @@ public interface IShakeHandler {
   - `spawnFrequency`は`Phase_Sequence`に含まれるデータを想定
   - フェーズ変更時に湧き出し速度も自動的に変更
   - **SpriteManager連携**: 生成時にランダムIDを取得し、音符の画像バリエーションを実現
+  - **フェーズ同期**: `_currentPhase`フィールドで現在フェーズを保持し、生成時に即座に正しい画像を設定（RestPhase中は休符画像で生成）
 
 #### Note.cs (Prefabコンポーネント)
 - **責補**：個別音符の状態・ビジュアル管理
@@ -524,6 +531,41 @@ public interface IShakeHandler {
   - 凍結開始時に半透明フラッシュ等を表示
   - 凍結解除時に非表示
 
+#### TimerDisplay.cs
+- **責補**：ゲーム全体の残り時間表示
+- **機能**：
+  - `GameManager.OnGameStart`を購読 → タイマー開始
+  - `GameManager.OnShowTitle`を購読 → タイマー停止・リセット
+  - `GAME_DURATION`から毎フレームカウントダウン
+  - TextMeshProで残り時間を秒単位で表示
+- **最適化**：
+  - `StringBuilder`を再利用してGC削減
+- **備考**：
+  - ゲーム終了判定は行わない（PhaseManagerが担当）
+
+#### PhaseDisplay.cs
+- **責補**：現在のフェーズ名表示
+- **機能**：
+  - `PhaseManager.OnPhaseChanged`を購読
+  - フェーズタイプに応じた日本語名を表示
+    - NotePhase: "♪ 音符フェーズ"
+    - RestPhase: "💤 休符フェーズ"
+    - LastSprintPhase: "🔥 ラストスパート"
+  - TextMeshProで表示
+- **最適化**：
+  - `StringBuilder`を再利用してGC削減
+
+#### ResultScoreDisplay.cs
+- **責補**：リザルトパネルに最終スコア表示
+- **機能**：
+  - `GameManager.OnGameOver`を購読
+  - `ScoreManager.Instance.GetScore()`で最終スコアを取得
+  - TextMeshProで表示（例: "Final Score: 150"）
+- **最適化**：
+  - `StringBuilder`を再利用してGC削減
+- **Inspector設定**：
+  - `_prefix`: 表示プレフィックス（デフォルト: "Final Score: "）
+
 ---
 
 ## 4. フォルダ構成
@@ -562,7 +604,10 @@ Assets/
 │   │   ├── PanelController.cs
 │   │   ├── ScoreDisplay.cs
 │   │   ├── PhaseProgressBar.cs
-│   │   └── FreezeEffectUI.cs
+│   │   ├── FreezeEffectUI.cs
+│   │   ├── TimerDisplay.cs           ※ ゲーム全体のタイマー表示
+│   │   ├── PhaseDisplay.cs           ※ 現在フェーズ名の表示
+│   │   └── ResultScoreDisplay.cs     ※ リザルトパネルの最終スコア表示
 │   │
 │   └── Data/
 │       ├── GameConstants.cs
@@ -721,6 +766,14 @@ Assets/
    - 画像参照キャッシュによるパフォーマンス最適化（生成時2回、切り替え時0回のアクセス）
    - 複数種類の音符画像によるゲームプレイの視覚的バリエーション向上
    - 後方互換性の維持（SpriteManagerなしでも動作）
+7. **UI表示機能の追加と不具合修正** - ユーザビリティ向上とゲームバランス改善（2025-11-19）
+   - 修正1: RestPhase中の音符生成時に即座に休符画像を表示（NoteSpawner.csでフェーズ同期）
+   - 修正2: LastSprintPhaseでもフリーズを有効化（FreezeManager.csの無効化処理削除）
+   - 修正3: TimerDisplay.cs新規作成 - ゲーム全体の残り時間表示
+   - 修正4: PhaseDisplay.cs新規作成 - 現在フェーズ名の表示
+   - 修正5: ResultScoreDisplay.cs新規作成 - リザルトパネルの最終スコア表示
+   - 全UIクラスでStringBuilderによるGC削減を実装
+   - イベント駆動設計による疎結合を維持
 
 ### 9.2 今後の開発方針
 - このドキュメントをAI参照用の正確な設計書として維持
