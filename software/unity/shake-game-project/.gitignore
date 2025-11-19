@@ -99,7 +99,7 @@ InitTestScene*.unity*
 /[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
 
 
-/[Aa]ssets/TextMesh Pro/Fonts/*SDF.asset
-/[Aa]ssets/Fonts/*SDF.asset
+/[Aa]ssets/TextMesh Pro/Fonts/*SDF*.asset*
+/[Aa]ssets/Fonts/*SDF*.asset*
 
 /[Aa]ssets/JMO Assets*
