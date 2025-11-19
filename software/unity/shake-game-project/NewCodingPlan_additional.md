@@ -2,317 +2,247 @@
 - ~~大量のハンドラー(シェイク処理は音符時と休符時の2種類でいい)~~ → **完了**: Phase1～7ShakeHandler（7個）を NoteShakeHandler + RestShakeHandler（2個）に統合
 - ~~シェイク処理の高速性について検討(イベント駆動は早いのか？)~~ → **完了**: UnityEvent廃止、直接呼び出し方式で約3倍高速化
 
-## 要修正項目
-
-### 修正計画概要（2025-11-19作成）
-
----
-
-### 1. 休符モードの時に生成された音符が休符になっていない
-
-**現状分析**：
-- `NoteSpawner.cs`（150-228行目）でSpawn時に`SetSpriteID()`を呼んでいる
-- `Note.cs`（1-168行目）で`PhaseManager.OnPhaseChanged`を購読して画像を切り替え
-- **問題点**：生成時に現在のフェーズ情報が`Note`に伝わっていない
-  - `NoteSpawner`は生成時にSpriteIDのみ設定し、フェーズは設定していない
-  - `Note`はイベント購読で次のフェーズ変更時に初めて画像を更新
-  - つまり、RestPhaseで生成された音符は、生成直後は音符画像のまま表示される
-
-**修正方針（CodeArchitecture.md準拠）**：
-1. `NoteSpawner`はフェーズ変更を保持（既に`PhaseManager.OnPhaseChanged`を購読中）
-2. `SpawnOneNote()`で現在保持しているフェーズを使用
-3. `Note.SetPhase(Phase phase)`を生成直後に呼び出す
-4. これにより生成時に正しい画像（音符/休符）が即座に表示される
-
-**設計的考察**：
-- **選択肢1**: `PhaseManager.Instance.GetCurrentPhase()`を毎回呼ぶ
-  - メリット: シンプル
-  - デメリット: シングルトン参照のオーバーヘッド
-- **選択肢2**: `NoteSpawner`がフェーズ情報をローカル保持（推奨）
-  - メリット: 既に`OnPhaseChanged`を購読しており、`PhaseChangeData`を受け取っている
-  - メリット: フェーズ情報をフィールドに保存すれば、Spawn時は即座にアクセス可能
-  - メリット: PhaseManagerへの依存を減らし、疎結合を維持
-  - 実装: `private Phase _currentPhase`フィールドを追加
-
-**修正箇所**：
-- ファイル：`Assets/Scripts/Gameplay/NoteSpawner.cs`
-- 追加フィールド：`private Phase _currentPhase = Phase.NotePhase;`
-- 修正メソッド1：`OnPhaseChanged()`でフェーズを保存
-- 修正メソッド2：`SpawnOneNote()`で保存したフェーズを使用
-- 追加コード（SpawnOneNote内）：
-  ```csharp
-  // 現在のフェーズを設定（生成時に正しい画像を表示）
-  note.SetPhase(_currentPhase);
-  ```
-
-**実装手順**：
-1. `NoteSpawner.cs`にフィールド追加：`private Phase _currentPhase = Phase.NotePhase;`
-2. `OnPhaseChanged(PhaseChangeData phaseData)`メソッド内の先頭で`_currentPhase = phaseData.phaseType;`を追加
-3. `SpawnOneNote()`の`note.SetSpriteID(randomID)`の直後に`note.SetPhase(_currentPhase);`を追加
-4. コンパイルエラーチェック
-5. デバッグモードで動作確認（RestPhaseで休符画像が即座に表示されるか）
-
-**重要**: `OnPhaseChanged()`では既に`StartCoroutine(SpawnLoop(...))`を呼んでいるため、フェーズ保存は**Coroutine開始前**に行う必要がある。
+## ✅ 微小修正項目（完了 - 2025-11-19）
+- ~~スライダは減っていくようにする。フェーズの種類によって色を変える。~~ → **完了**: 進行度を1→0に反転、フェーズごとに色分け（青/オレンジ/赤）
+- ~~音符の生成範囲を画面内に。~~ → **完了**: カメラのorthographicSizeから動的計算、画面サイズの90%以内に生成
 
 ---
 
-### 2. ラストスパートでもフリーズは効くようにする
+## 微小修正項目の実装計画（2025-11-19）
 
-**現状分析**：
-- `FreezeManager.cs`（107-113行目）でLastSprintPhase判定が存在
-- コード：
-  ```csharp
-  if (PhaseManager.Instance != null && 
-      PhaseManager.Instance.GetCurrentPhase() == Phase.LastSprintPhase)
-  {
-      Debug.Log("[FreezeManager] LastSprintPhase detected, freeze disabled");
-      return;  // ★ ここでフリーズを無効化
-  }
-  ```
-- **問題点**：要件変更により、ラストスパートでもフリーズを有効にする必要がある
+### 修正1: スライダを減っていくように変更 + フェーズごとの色変更
 
-**修正方針（CodeArchitecture.md準拠）**：
-1. `FreezeManager.StartFreeze()`からLastSprintPhase判定を削除
-2. コメントも削除（ドキュメントから「無効化」記述を削除）
-3. シンプルな実装に戻す
+**対象ファイル**: `Assets/Scripts/UI/PhaseProgressBar.cs`
 
-**修正箇所**：
-- ファイル：`Assets/Scripts/Managers/FreezeManager.cs`
-- メソッド：`StartFreeze(float duration)`（約100-120行目）
-- 削除対象：
-  ```csharp
-  // LastSprintPhase 中は凍結しない（無効化）
-  if (PhaseManager.Instance != null && 
-      PhaseManager.Instance.GetCurrentPhase() == Phase.LastSprintPhase)
-  {
-      if (GameConstants.DEBUG_MODE)
-          Debug.Log("[FreezeManager] LastSprintPhase detected, freeze disabled");
-      return;
-  }
-  ```
+**現状の問題点**:
+- スライダーが0→1に「増えていく」表示（残り時間ではなく経過時間）
+- フェーズの種類による色分けがない（視覚的にフェーズ区別が困難）
 
-**実装手順**：
-1. `FreezeManager.cs`の`StartFreeze()`メソッドを開く
-2. 上記のLastSprintPhase判定ブロック（約107-114行目）を削除
-3. クラスドキュメント（13行目付近）の「LastSprintPhase 中は無効」記述も削除
-4. コンパイルエラーチェック
-5. デバッグモードで動作確認（LastSprintPhaseでもフリーズが発動するか）
+**修正内容**:
+1. **進行度計算の反転**
+   - 現在: `progress = (total - remaining) / total` (0→1に増える)
+   - 修正後: `progress = remaining / total` (1→0に減る)
+   - これにより「残り時間」の視覚的表現が直感的になる
 
----
+2. **フェーズごとの色設定**
+   - `OnPhaseChanged()`内でフェーズタイプに応じてスライダーの色を変更
+   - 色定義（CodeArchitecture.mdのPhaseDisplay実装を参考）:
+     - `Phase.NotePhase`: 青系（例: `new Color(0.3f, 0.5f, 1f)` - 爽やかな青）
+     - `Phase.RestPhase`: オレンジ系（例: `new Color(1f, 0.6f, 0.2f)` - 警告的なオレンジ）
+     - `Phase.LastSprintPhase`: 赤系（例: `new Color(1f, 0.2f, 0.2f)` - 緊迫感のある赤）
+   - `Slider.fillRect.GetComponent<Image>().color` でfill部分の色を変更
 
-### 3. タイマー表示(TextMeshPro)
+**実装方針**:
+- CodeArchitecture.mdの「3.6 UI/」の設計原則に準拠
+- イベント駆動設計を維持（`PhaseManager.OnPhaseChanged`購読）
+- `GameConstants.cs`に色定義を追加する選択肢もあるが、UI表現なのでPhaseProgressBar内で定義
+- `[SerializeField]`でInspector設定可能にすることで調整の柔軟性を確保
 
-**現状分析**：
-- ゲーム全体の残り時間を表示するUIが存在しない
-- `PhaseProgressBar.cs`はフェーズごとの進行度を管理（個別フェーズのタイマー）
-- ゲーム全体の制限時間は`GameConstants.GAME_DURATION`で定義（PHASE_SEQUENCEの合計）
-- プレイ時間は1分以下（約60秒）なので秒数表示で十分
-- **重要**: PhaseManagerが既に全フェーズ完了時に`GameManager.EndGame()`を呼んでいる
+**修正箇所**:
+```csharp
+// 1. フィールド追加
+[Header("Phase Colors")]
+[SerializeField] private Color _notePhaseColor = new Color(0.3f, 0.5f, 1f);
+[SerializeField] private Color _restPhaseColor = new Color(1f, 0.6f, 0.2f);
+[SerializeField] private Color _lastSprintColor = new Color(1f, 0.2f, 0.2f);
 
-**修正方針（CodeArchitecture.md準拠）**：
-1. 新規UIクラス`TimerDisplay.cs`を作成（`Assets/Scripts/UI/`）
-2. `ScoreDisplay.cs`（既存）をテンプレートとして活用
-3. 責務：ゲーム全体の残り時間をTextMeshProで秒数表示（"45s"形式）
-4. `GameManager.OnGameStart`を購読してタイマー開始
-5. 毎フレームUpdate()で残り時間を減算し、TextMeshProに反映
-6. **表示のみに徹する**：ゲーム終了はPhaseManagerが担当（責務分離）
-7. StringBuilderでGC削減（ScoreDisplay同様）
+private Image _fillImage;
 
-**実装内容**：
-- ファイル：`Assets/Scripts/UI/TimerDisplay.cs`（新規作成）
-- 主要機能：
-  - `[SerializeField] private TextMeshProUGUI _timerText;`
-  - `GameManager.OnGameStart`を購読（ゲーム全体のタイマー開始）
-  - `GameManager.OnShowTitle`を購読（タイマーリセット）
-  - `Update()`で`_remainingTime -= Time.deltaTime`
-  - 表示形式："45s"（秒数のみ、整数表示）
-  - StringBuilderで文字列構築
-  - **注意**: 0秒になっても`GameManager.EndGame()`は呼ばない（PhaseManagerが担当）
+// 2. Start()でfillImageキャッシュ
+void Start() {
+    // 既存コード...
+    
+    // Fill部分のImageコンポーネント取得
+    if (_progressSlider != null && _progressSlider.fillRect != null) {
+        _fillImage = _progressSlider.fillRect.GetComponent<Image>();
+    }
+}
 
-**設計上の重要ポイント**：
-- **責務分離**: ゲーム終了判定はPhaseManagerの責務
-- **TimerDisplayの責務**: 視覚的なフィードバックのみ（表示専用）
-- PhaseManagerが全フェーズ完了時に`GameManager.EndGame()`を呼ぶ仕組みが既に存在
-- タイマー表示が0になる直前にPhaseManagerがゲームを終了するため、自然な動作
+// 3. OnPhaseChanged()で色変更
+private void OnPhaseChanged(PhaseChangeData data) {
+    // 既存コード（duration, remainingTime設定）...
+    
+    // フェーズに応じた色変更
+    if (_fillImage != null) {
+        switch (data.phaseType) {
+            case Phase.NotePhase:
+                _fillImage.color = _notePhaseColor;
+                break;
+            case Phase.RestPhase:
+                _fillImage.color = _restPhaseColor;
+                break;
+            case Phase.LastSprintPhase:
+                _fillImage.color = _lastSprintColor;
+                break;
+        }
+    }
+}
 
-**フェーズタイマーとの違い**：
-- `PhaseProgressBar`：個別フェーズの進行度（Slider + 内部タイマー）
-- `TimerDisplay`：ゲーム全体の残り時間（TextMeshPro表示）
-- 完全に独立した責務
+// 4. Update()で進行度計算を反転
+void Update() {
+    // 既存コード...
+    
+    // ★ 修正: 減っていく方向に変更
+    float progress = 0f;
+    if (_totalDuration > 0f) {
+        progress = _remainingTime / _totalDuration;  // 1→0に減る
+    }
+    
+    _progressSlider.value = progress;
+}
+```
 
-**実装手順**：
-1. `Assets/Scripts/UI/TimerDisplay.cs`を新規作成
-2. `ScoreDisplay.cs`を参考に基本構造をコピー
-3. フィールド：`_timerText`, `_remainingTime`, `_isRunning`
-4. `Start()`で`GameManager.OnGameStart.AddListener(OnGameStart)`と`GameManager.OnShowTitle.AddListener(OnShowTitle)`
-5. `OnGameStart()`で`_remainingTime = GameConstants.GAME_DURATION; _isRunning = true;`
-6. `OnShowTitle()`で`_isRunning = false; _remainingTime = 0f;`（タイマーリセット）
-7. `Update()`で残り時間を減算、表示更新（0未満にならないようClamp）
-8. フォーマット関数：`FormatTime(float seconds)` → "45s"形式（整数秒）
-9. `OnDestroy()`でイベント購読解除
-10. UnityエディタでTextMeshProコンポーネントをアタッチ
-11. 動作確認
+**設計上の利点**:
+- ユーザビリティ向上: 「残り時間」の直感的な把握
+- 視認性向上: フェーズの種類が色で即座に判別可能
+- 保守性: Inspector設定で色調整が容易
+- 疎結合維持: PhaseManagerへの依存は既存イベントのみ
 
 ---
 
-### 4. フェーズ表示(TextMeshPro)
+### 修正2: 音符の生成範囲を画面内に制限
 
-**現状分析**：
-- フェーズ情報を表示するUIクラスが存在しない
-- `PhaseChangeData`には`phaseType`（NotePhase等）と`phaseIndex`が含まれる
+**対象ファイル**: `Assets/Scripts/Gameplay/NoteSpawner.cs`
 
-**修正方針（CodeArchitecture.md準拠）**：
-1. 新規UIクラス`PhaseDisplay.cs`を作成（`Assets/Scripts/UI/`）
-2. `ScoreDisplay.cs`をテンプレートとして活用
-3. 責務：現在のフェーズ名をTextMeshProで表示
-4. PhaseManager.OnPhaseChangedを購読
-5. フェーズタイプに応じた表示名を定義（"♪ 音符フェーズ", "💤 休符フェーズ", "🔥 ラストスパート"等）
+**現状の問題点**:
+- `spawnRangeX = (-6f, 6f)`, `spawnRangeY = (-4f, 4f)` が固定値
+- 画面解像度やアスペクト比によっては画面外に生成される可能性
+- カメラのorthographicSizeと連動していない
 
-**実装内容**：
-- ファイル：`Assets/Scripts/UI/PhaseDisplay.cs`（新規作成）
-- 主要機能：
-  - `[SerializeField] private TextMeshProUGUI _phaseText;`
-  - `PhaseManager.OnPhaseChanged`を購読
-  - フェーズタイプごとの表示名マッピング
-  - StringBuilderでGC削減
+**修正内容**:
+1. **動的な生成範囲計算**
+   - カメラの`orthographicSize`から画面の実際の範囲を計算
+   - アスペクト比を考慮してX軸範囲を算出
+   - 画面端から少し内側にマージンを設定（例: 画面サイズの90%以内）
 
-**実装手順**：
-1. `Assets/Scripts/UI/PhaseDisplay.cs`を新規作成
-2. `ScoreDisplay.cs`を参考に基本構造をコピー
-3. フィールド：`_phaseText`
-4. `OnPhaseChanged(PhaseChangeData data)`でフェーズ名を取得
-5. フェーズタイプマッピング関数：
+2. **実装方法**:
    ```csharp
-   private string GetPhaseName(Phase phase)
-   {
-       switch (phase)
-       {
-           case Phase.NotePhase: return "♪ 音符フェーズ";
-           case Phase.RestPhase: return "💤 休符フェーズ";
-           case Phase.LastSprintPhase: return "🔥 ラストスパート";
-           default: return "不明";
-       }
-   }
+   // カメラ参照を取得
+   Camera mainCamera = Camera.main;
+   
+   // Y軸範囲 = orthographicSize
+   float cameraHeight = mainCamera.orthographicSize;
+   
+   // X軸範囲 = orthographicSize * aspect ratio
+   float cameraWidth = cameraHeight * mainCamera.aspect;
+   
+   // マージンを適用（画面サイズの90%以内）
+   float margin = 0.9f;
+   float spawnRangeXMin = -cameraWidth * margin;
+   float spawnRangeXMax = cameraWidth * margin;
+   float spawnRangeYMin = -cameraHeight * margin;
+   float spawnRangeYMax = cameraHeight * margin;
    ```
-6. UnityエディタでTextMeshProコンポーネントをアタッチ
-7. 動作確認
+
+**実装方針**:
+- CodeArchitecture.mdの「3.3 Gameplay/」の設計原則に準拠
+- カメラ解像度依存の動的計算（実行時に自動調整）
+- Inspector設定の`spawnRangeX/Y`は削除せず、バックアップとして残す（カメラ未設定時のフォールバック）
+- `GameConstants.cs`に`NOTE_SPAWN_MARGIN`定数を追加（デフォルト0.9f = 90%）
+
+**修正箇所**:
+
+**A. GameConstants.csに定数追加**:
+```csharp
+// ===== Visuals =====
+/// <summary>音符生成範囲のマージン（画面サイズに対する比率）</summary>
+public const float NOTE_SPAWN_MARGIN = 0.9f;  // 90%以内
+```
+
+**B. NoteSpawner.cs修正**:
+```csharp
+// 1. フィールド追加
+[Header("Spawn Range (Fallback)")]
+[SerializeField] private Vector2 spawnRangeX = new Vector2(-6f, 6f);
+[SerializeField] private Vector2 spawnRangeY = new Vector2(-4f, 4f);
+[Tooltip("自動計算された生成範囲（実行時に設定）")]
+[SerializeField] private Vector2 _calculatedRangeX;
+[SerializeField] private Vector2 _calculatedRangeY;
+
+private Camera _mainCamera;
+
+// 2. Awake()またはStart()で範囲計算
+private void Awake() {
+    // 既存コード...
+    
+    // カメラ取得と生成範囲計算
+    _mainCamera = Camera.main;
+    if (_mainCamera != null) {
+        CalculateSpawnRange();
+    } else {
+        Debug.LogWarning("[NoteSpawner] Main camera not found, using fallback spawn range");
+    }
+}
+
+/// <summary>
+/// 画面サイズに基づいて生成範囲を動的計算
+/// </summary>
+private void CalculateSpawnRange() {
+    if (_mainCamera == null) return;
+    
+    float cameraHeight = _mainCamera.orthographicSize;
+    float cameraWidth = cameraHeight * _mainCamera.aspect;
+    
+    float margin = GameConstants.NOTE_SPAWN_MARGIN;
+    
+    _calculatedRangeX = new Vector2(-cameraWidth * margin, cameraWidth * margin);
+    _calculatedRangeY = new Vector2(-cameraHeight * margin, cameraHeight * margin);
+    
+    if (GameConstants.DEBUG_MODE) {
+        Debug.Log($"[NoteSpawner] Calculated spawn range - X: {_calculatedRangeX}, Y: {_calculatedRangeY}");
+    }
+}
+
+// 3. SpawnOneNote()で計算済み範囲を使用
+private void SpawnOneNote() {
+    // 既存コード...
+    
+    // ★ 修正: 動的計算された範囲を使用
+    Vector2 rangeX = (_mainCamera != null) ? _calculatedRangeX : spawnRangeX;
+    Vector2 rangeY = (_mainCamera != null) ? _calculatedRangeY : spawnRangeY;
+    
+    Vector3 randomPos = new Vector3(
+        Random.Range(rangeX.x, rangeX.y),
+        Random.Range(rangeY.x, rangeY.y),
+        0f
+    );
+    
+    // 以降は既存コード...
+}
+```
+
+**設計上の利点**:
+- 解像度対応: 任意のアスペクト比で画面内生成を保証
+- 保守性: マージン値をGameConstantsで一元管理
+- デバッグ性: 計算結果をInspectorで確認可能（`_calculatedRangeX/Y`）
+- 後方互換性: カメラ未設定時はInspector設定値をフォールバック
+- 拡張性: 将来的にカメラズーム対応も容易（OnPhaseChangedでCalculateSpawnRange再実行）
 
 ---
 
-### 5. 最終スコア表示の実装
+### 実装優先度
+1. **修正1（スライダー）**: 高（ユーザビリティ直結）
+2. **修正2（生成範囲）**: 中（特定解像度でのみ問題発生の可能性）
 
-**現状分析**：
-- `ScoreDisplay.cs`は既に存在し、リアルタイムスコアを表示
-- `PanelController.cs`でリザルトパネルを表示（GameManager.OnGameOverで発火）
-- **問題点**：リザルトパネル内に最終スコアを表示するUIクラスが存在しない
+### 実装時の注意点
+- 両方の修正ともCodeArchitecture.mdの「イベント駆動」「疎結合」の原則を維持
+- Inspector設定の柔軟性を確保（調整容易性）
+- DEBUG_MODEでのログ出力を追加（動作確認）
+- 既存の機能を破壊しない（フォールバック機構）
 
-**修正方針（CodeArchitecture.md準拠）**：
-1. 新規UIクラス`ResultScoreDisplay.cs`を作成（`Assets/Scripts/UI/`）
-2. `ScoreDisplay.cs`と類似だが、購読イベントが異なる
-3. 責務：ゲーム終了時の最終スコアを表示（GameManager.OnGameOverで取得）
-4. ScoreManager.GetScore()で最終スコアを取得
-5. TextMeshProに"Final Score: 123"形式で表示
+### テスト項目
+**修正1（スライダー）**:
+- [ ] スライダーが1→0に減っていくことを確認
+- [ ] NotePhaseで青色表示を確認
+- [ ] RestPhaseでオレンジ色表示を確認
+- [ ] LastSprintPhaseで赤色表示を確認
+- [ ] フェーズ切り替え時に色が即座に変わることを確認
 
-**実装内容**：
-- ファイル：`Assets/Scripts/UI/ResultScoreDisplay.cs`（新規作成）
-- 主要機能：
-  - `[SerializeField] private TextMeshProUGUI _finalScoreText;`
-  - `GameManager.OnGameOver`を購読
-  - `ScoreManager.GetScore()`で最終スコアを取得
-  - 表示形式："Final Score: 123"
-  - StringBuilderでGC削減
-
-**実装手順**：
-1. `Assets/Scripts/UI/ResultScoreDisplay.cs`を新規作成
-2. `ScoreDisplay.cs`を参考に基本構造をコピー
-3. フィールド：`_finalScoreText`, `_prefix = "Final Score: "`
-4. `Start()`で`GameManager.OnGameOver.AddListener(OnGameOver)`
-5. `OnGameOver()`で`ScoreManager.Instance.GetScore()`を取得
-6. StringBuilderで"Final Score: 123"を構築して表示
-7. `OnDestroy()`でイベント購読解除（メモリリーク防止）
-8. Unityエディタでリザルトパネル内にTextMeshProを配置
-9. InspectorでResultScoreDisplayをアタッチ
-10. 動作確認
-
-**プレイ中スコアとの違い**：
-- `ScoreDisplay`：ScoreManager.OnScoreChangedを購読（リアルタイム更新）
-- `ResultScoreDisplay`：GameManager.OnGameOverを購読（1回だけ表示）
-- 重なる部分：StringBuilderの使い方、TextMeshProへの反映方法
-- 独立性：2つのクラスは完全に独立（疎結合）
-
-**注意事項**：
-- リザルトパネル内のTextMeshProコンポーネントは、ゲーム開始時は非表示（PanelControllerが管理）
-- `OnGameOver`イベント発火時にパネルが表示され、同時にスコアが更新される
-- タイトル復帰時は自動的にリザルトパネルが非表示になるため、特別なリセット処理は不要
-
----
-
-### 実装優先順位
-
-1. **修正1（休符表示）**：最優先（ゲームプレイの視覚的正確性に直結）
-2. **修正2（フリーズ有効化）**：高優先（ゲームバランスに影響）
-3. **修正3（タイマー表示）**：中優先（ユーザビリティ向上）
-4. **修正4（フェーズ表示）**：中優先（ユーザビリティ向上）
-5. **修正5（最終スコア表示）**：低優先（機能完全性）
-
----
-
-## 修正計画の設計整合性チェック（2025-11-19精査完了）
-
-### ✅ 確認済み事項
-
-#### 1. イベント購読の整合性
-- **修正1（NoteSpawner）**: 既に`PhaseManager.OnPhaseChanged`を購読中 → フェーズ情報をローカル保持
-- **修正2（FreezeManager）**: コード削除のみ、イベント購読変更なし
-- **修正3（TimerDisplay）**: `GameManager.OnGameStart`と`OnShowTitle`を購読 → 適切
-- **修正4（PhaseDisplay）**: `PhaseManager.OnPhaseChanged`を購読 → 適切
-- **修正5（ResultScoreDisplay）**: `GameManager.OnGameOver`を購読 → 適切
-
-#### 2. 責務分離の確認
-- **ゲーム終了判定**: PhaseManagerが全フェーズ完了時に`GameManager.EndGame()`を呼ぶ（既存実装）
-- **TimerDisplay**: 表示専用に徹し、ゲーム終了判定は行わない（責務分離）
-- **NoteSpawner**: フェーズ情報をローカル保持し、PhaseManagerへの依存を最小化（疎結合）
-
-#### 3. メモリリーク防止
-- 全UIクラスで`OnDestroy()`にイベント購読解除を実装
-- StringBuilderの再利用でGC削減
-
-#### 4. タイトル復帰時のリセット
-- **修正3（TimerDisplay）**: `OnShowTitle`を購読してタイマーリセット
-- **修正5（ResultScoreDisplay）**: パネル非表示で自動的にリセット（追加処理不要）
-- **修正1（NoteSpawner）**: 既に`OnShowTitle`でスポーン停止（フェーズ情報もリセット不要、次回OnPhaseChangedで更新）
-
-#### 5. CodeArchitecture.md準拠
-- すべての修正が以下の設計原則に準拠：
-  - イベント駆動設計
-  - 責務の分離
-  - 疎結合
-  - パフォーマンス最適化（StringBuilder、ローカルキャッシュ）
-
-### 📝 設計上の重要な決定事項
-
-1. **修正1（休符表示）**: フェーズ情報をローカル保持する方式を採用
-   - 理由: 疎結合、パフォーマンス向上、既存イベント購読の活用
-   
-2. **修正3（タイマー表示）**: ゲーム終了判定を行わない
-   - 理由: 責務分離、PhaseManagerが既に終了判定を実装済み
-   
-3. **全UIクラス**: StringBuilderを使用してGC削減
-   - 理由: ScoreDisplayとの一貫性、パフォーマンス最適化
-
-### 🔍 潜在的な注意点
-
-1. **修正1**: `OnPhaseChanged()`内でフェーズ保存は**Coroutine開始前**に実行すること
-2. **修正3**: タイマーが0秒になる直前にPhaseManagerがゲームを終了するため、表示上の違和感はない
-3. **修正5**: リザルトパネルは`PanelController`が管理するため、ResultScoreDisplayは表示更新のみに集中
-
----
-
-## 微小修正項目
-おそらく小さな変更で反映できる修正項目。後回し。
-
-- スライダは減っていくようにする。フェーズの種類によって色を変える。
-- 音符の生成範囲を画面内に。
+**修正2（生成範囲）**:
+- [ ] 16:9解像度で音符が画面内に生成されることを確認
+- [ ] 4:3解像度で音符が画面内に生成されることを確認
+- [ ] DEBUG_MODEで計算された範囲がログ出力されることを確認
+- [ ] カメラ未設定時にフォールバック範囲が使用されることを確認
 
 ## 足りない機能・検討項目
 

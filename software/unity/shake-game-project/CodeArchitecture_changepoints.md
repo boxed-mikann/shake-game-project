@@ -199,6 +199,66 @@
 
 ---
 
+### 2025-11-19: UI改善（スライダー表示改善 + 音符生成範囲の画面内制限）
+**ステータス**: ✅ CodeArchitecture.mdに反映済み
+
+#### 変更内容
+1. **PhaseProgressBar.cs: スライダー表示改善**
+   - 進行度計算を反転: `progress = remainingTime / totalDuration` で1→0に減る表示
+   - 初期値を1に変更（満タン状態から開始）
+   - フェーズごとの色分け機能追加:
+     - NotePhase: 青系 `(0.3f, 0.5f, 1f)`
+     - RestPhase: オレンジ系 `(1f, 0.6f, 0.2f)`
+     - LastSprintPhase: 赤系 `(1f, 0.2f, 0.2f)`
+   - Inspector設定可能なカラーフィールド追加
+   - `_fillImage`フィールド追加（Slider.fillRectのImageコンポーネント参照）
+   - `Start()`で`_fillImage`をキャッシュ
+   - `OnPhaseChanged()`でフェーズに応じた色変更処理追加
+
+2. **GameConstants.cs: 定数追加**
+   - `NOTE_SPAWN_MARGIN = 0.9f` 追加（音符生成範囲のマージン、画面サイズの90%以内）
+
+3. **NoteSpawner.cs: 動的生成範囲計算**
+   - フィールド追加:
+     - `_calculatedRangeX`, `_calculatedRangeY` (Inspector表示用)
+     - `_mainCamera` (カメラ参照)
+   - 既存の`spawnRangeX/Y`をフォールバック用に変更
+   - `CalculateSpawnRange()`メソッド新規追加:
+     - カメラの`orthographicSize`とアスペクト比から画面範囲を計算
+     - `NOTE_SPAWN_MARGIN`を適用して生成範囲を設定
+     - DEBUG_MODEでログ出力
+   - `OnEnable()`に範囲計算処理を追加（ゲームスタート時のカメラ状態を参照）
+   - `SpawnOneNote()`で動的計算された範囲を使用（カメラがない場合はフォールバック）
+
+#### 理由
+- **スライダー改善**: 残り時間の直感的な把握、フェーズの視覚的区別を実現
+- **生成範囲制限**: 任意の解像度・アスペクト比で音符が画面外に生成されるのを防止
+
+#### 設計原則の準拠
+- **イベント駆動設計**: PhaseManager.OnPhaseChangedを購読（既存設計を維持）
+- **疎結合**: PhaseManagerへの依存は既存イベントのみ
+- **Inspector設定**: 色やマージン値を調整可能
+- **後方互換性**: カメラ未設定時はInspector設定値をフォールバック
+- **デバッグ性**: 計算結果をInspectorで確認可能、DEBUG_MODEでログ出力
+
+#### パフォーマンス特性
+- **スライダー色変更**: フェーズ変更時（数秒に1回）のみ実行
+- **生成範囲計算**: OnEnable()時（ゲームスタート時）に1回のみ実行
+- **毎フレーム**: 既存処理（進行度計算、スライダー更新）のみ
+
+#### 影響範囲
+- PhaseProgressBar.cs: フィールド追加、Start()修正、OnPhaseChanged()修正、Update()修正
+- GameConstants.cs: 定数追加
+- NoteSpawner.cs: フィールド追加、OnEnable()修正、CalculateSpawnRange()新規追加、SpawnOneNote()修正
+
+#### 反映日
+2025-11-19 - CodeArchitecture.md 以下のセクションに反映完了：
+- セクション 3.6: UI/PhaseProgressBar.cs - 機能説明更新（色分け、反転表示、最適化情報追加）
+- セクション 3.3: Gameplay/NoteSpawner.cs - 機能説明更新（動的範囲計算、データ構造、備考追加）
+- セクション 9.1: 実装状況 - UI改善を完了項目8として追加（全変更内容を詳細に記載）
+
+---
+
 ## 今後の変更記録用テンプレート
 
 ### YYYY-MM-DD: [変更タイトル]

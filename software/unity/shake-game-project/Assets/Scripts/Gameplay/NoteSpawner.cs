@@ -22,11 +22,19 @@ using System.Collections;
 public class NoteSpawner : MonoBehaviour
 {
     [SerializeField] private Transform spawnContainer;         // 音符の親オブジェクト
-    [SerializeField] private Vector2 spawnRangeX = new Vector2(-6f, 6f);    // X座標の範囲
-    [SerializeField] private Vector2 spawnRangeY = new Vector2(-4f, 4f);    // Y座標の範囲
+    
+    [Header("Spawn Range (Fallback)")]
+    [SerializeField] private Vector2 spawnRangeX = new Vector2(-6f, 6f);    // X座標の範囲（フォールバック用）
+    [SerializeField] private Vector2 spawnRangeY = new Vector2(-4f, 4f);    // Y座標の範囲（フォールバック用）
+    
+    [Header("Calculated Spawn Range (Runtime)")]
+    [Tooltip("自動計算された生成範囲（実行時に設定）")]
+    [SerializeField] private Vector2 _calculatedRangeX;
+    [SerializeField] private Vector2 _calculatedRangeY;
     
     private Coroutine _spawnCoroutine = null;
     private Phase _currentPhase = Phase.NotePhase;
+    private Camera _mainCamera;
     
     // シングルトンインスタンス
     private static NoteSpawner _instance;
@@ -64,8 +72,47 @@ public class NoteSpawner : MonoBehaviour
             Debug.Log("[NoteSpawner] Initialized");
     }
     
+    /// <summary>
+    /// 画面サイズに基づいて生成範囲を動的計算
+    /// </summary>
+    private void CalculateSpawnRange()
+    {
+        if (_mainCamera == null)
+        {
+            Debug.LogWarning("[NoteSpawner] Cannot calculate spawn range: camera is null");
+            return;
+        }
+        
+        // カメラのorthographicSizeから画面範囲を計算
+        float cameraHeight = _mainCamera.orthographicSize;
+        float cameraWidth = cameraHeight * _mainCamera.aspect;
+        
+        // マージンを適用（画面サイズの90%以内）
+        float margin = GameConstants.NOTE_SPAWN_MARGIN;
+        
+        _calculatedRangeX = new Vector2(-cameraWidth * margin, cameraWidth * margin);
+        _calculatedRangeY = new Vector2(-cameraHeight * margin, cameraHeight * margin);
+        
+        if (GameConstants.DEBUG_MODE)
+        {
+            Debug.Log($"[NoteSpawner] Calculated spawn range - X: {_calculatedRangeX}, Y: {_calculatedRangeY}");
+            Debug.Log($"[NoteSpawner] Camera size - Width: {cameraWidth}, Height: {cameraHeight}, Aspect: {_mainCamera.aspect}");
+        }
+    }
+    
     private void OnEnable()
     {
+        // カメラ取得と生成範囲計算（ゲームスタート時のカメラ状態を参照）
+        _mainCamera = Camera.main;
+        if (_mainCamera != null)
+        {
+            CalculateSpawnRange();
+        }
+        else
+        {
+            Debug.LogWarning("[NoteSpawner] Main camera not found, using fallback spawn range");
+        }
+        
         // PhaseManager.OnPhaseChanged を購読
         PhaseManager.OnPhaseChanged.AddListener(OnPhaseChanged);
         GameManager.OnShowTitle.AddListener(StopSpawning);
@@ -170,10 +217,14 @@ public class NoteSpawner : MonoBehaviour
         // 親オブジェクトを設定
         note.transform.SetParent(spawnContainer);
         
+        // ★ 修正: 動的計算された範囲を使用（カメラがない場合はフォールバック）
+        Vector2 rangeX = (_mainCamera != null) ? _calculatedRangeX : spawnRangeX;
+        Vector2 rangeY = (_mainCamera != null) ? _calculatedRangeY : spawnRangeY;
+        
         // ランダムな位置に配置
         Vector3 randomPos = new Vector3(
-            Random.Range(spawnRangeX.x, spawnRangeX.y),
-            Random.Range(spawnRangeY.x, spawnRangeY.y),
+            Random.Range(rangeX.x, rangeX.y),
+            Random.Range(rangeY.x, rangeY.y),
             0f
         );
         note.transform.position = randomPos;

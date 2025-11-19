@@ -317,13 +317,21 @@ public interface IShakeHandler {
   - `NotePool.GetNote()`でインスタンス取得
   - 音符の初期位置・ランダムカラー・**ランダムSprite ID**を設定
   - **生成時のフェーズ設定**: 現在のフェーズを保持し、生成時に`note.SetPhase(_currentPhase)`を呼び出して正しい画像を即座に表示
+  - **動的生成範囲計算**: `OnEnable()`時にカメラの`orthographicSize`とアスペクト比から画面範囲を自動計算
+  - 画面サイズの90%以内に生成（`GameConstants.NOTE_SPAWN_MARGIN`）
+  - カメラ未設定時はInspector設定値をフォールバック
   - タイトル復帰時にスポーンを停止
 - **重要メソッド**：
+  - `CalculateSpawnRange()` - 画面サイズに基づいて生成範囲を動的計算
   - `StopSpawning()` - スポーンCoroutineを停止
   - `SpawnOneNote()` - 音符を1個生成（位置、回転、色、**Sprite ID**、**フェーズ**を設定）
 - **イベント購読**：
   - `PhaseManager.OnPhaseChanged` → スポーン開始/変更、現在フェーズを記録
   - `GameManager.OnShowTitle` → スポーン停止
+- **データ構造**：
+  - `_calculatedRangeX`, `_calculatedRangeY`: 動的計算された生成範囲（Inspector表示可能）
+  - `_mainCamera`: カメラ参照
+  - `spawnRangeX`, `spawnRangeY`: フォールバック用の固定値
 - **実装例**：
   ```csharp
   void OnPhaseChanged(PhaseChangeData phaseData) {
@@ -360,6 +368,8 @@ public interface IShakeHandler {
   - フェーズ変更時に湧き出し速度も自動的に変更
   - **SpriteManager連携**: 生成時にランダムIDを取得し、音符の画像バリエーションを実現
   - **フェーズ同期**: `_currentPhase`フィールドで現在フェーズを保持し、生成時に即座に正しい画像を設定（RestPhase中は休符画像で生成）
+  - **解像度対応**: 任意のアスペクト比で画面内生成を保証（16:9, 4:3等）
+  - **デバッグ性**: 計算結果をInspectorで確認可能、DEBUG_MODEでログ出力
 
 #### Note.cs (Prefabコンポーネント)
 - **責補**：個別音符の状態・ビジュアル管理
@@ -521,8 +531,15 @@ public interface IShakeHandler {
   - `PhaseManager.OnPhaseChanged`を購読（フェーズの総継続時間を取得）
   - イベント発行時に`phaseData.duration`をローカルに保存
   - 毎フレーム独立タイマーを減衰（`remainingTime -= Time.deltaTime`）
-  - スライダー値を`(totalDuration - remainingTime) / totalDuration`で更新
+  - **スライダー値を`remainingTime / totalDuration`で更新（1→0に減る、残り時間を直感的に表示）**
+  - **フェーズごとの色分け機能**:
+    - NotePhase: 青系 `(0.3f, 0.5f, 1f)`
+    - RestPhase: オレンジ系 `(1f, 0.6f, 0.2f)`
+    - LastSprintPhase: 赤系 `(1f, 0.2f, 0.2f)`
+  - Inspector設定可能なカラーフィールド（色調整が容易）
+  - Slider.fillRectのImageコンポーネント参照をキャッシュ
 - **タイマー管理**：コンポーネント自身で管理（イベント時にDurationをセット）
+- **最適化**：色変更はフェーズ切り替え時のみ実行（数秒に1回）
 
 #### FreezeEffectUI.cs
 - **責補**：凍結ビジュアル表示
@@ -774,6 +791,14 @@ Assets/
    - 修正5: ResultScoreDisplay.cs新規作成 - リザルトパネルの最終スコア表示
    - 全UIクラスでStringBuilderによるGC削減を実装
    - イベント駆動設計による疎結合を維持
+8. **UI改善（スライダー表示改善 + 音符生成範囲の画面内制限）** - ユーザビリティとクロスプラットフォーム対応（2025-11-19）
+   - PhaseProgressBar.cs: スライダー進行度を1→0に反転（残り時間の直感的表示）
+   - PhaseProgressBar.cs: フェーズごとの色分け機能追加（青/オレンジ/赤）
+   - NoteSpawner.cs: カメラのorthographicSizeから動的生成範囲計算
+   - NoteSpawner.cs: 画面サイズの90%以内に生成（任意のアスペクト比対応）
+   - GameConstants.cs: NOTE_SPAWN_MARGIN定数追加
+   - OnEnable()時に範囲計算（ゲームスタート時のカメラ状態を参照）
+   - Inspector設定による調整の柔軟性を確保
 
 ### 9.2 今後の開発方針
 - このドキュメントをAI参照用の正確な設計書として維持

@@ -112,6 +112,12 @@ public static class GameConstants
     public const int MAX_NOTE_COUNT = 100;              // 同時生成上限の音符数
     public const float NOTE_ROTATION_MAX = 30f;         // 生成時の回転範囲（±度）
     
+    /// <summary>
+    /// 音符生成範囲のマージン（画面サイズに対する比率）
+    /// 0.9f = 画面サイズの90%以内に生成
+    /// </summary>
+    public const float NOTE_SPAWN_MARGIN = 0.9f;
+    
     // ===== Debug =====
     public const bool DEBUG_MODE = true;                // デバッグモード（キーボード入力有効化）
     public const bool USE_KEYBOARD_INPUT = true;        // キーボード入力の使用
