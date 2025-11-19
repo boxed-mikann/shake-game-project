@@ -179,6 +179,16 @@ public class NoteSpawner : MonoBehaviour
         float randomRotation = Random.Range(-GameConstants.NOTE_ROTATION_MAX, GameConstants.NOTE_ROTATION_MAX);
         note.transform.rotation = Quaternion.Euler(0f, 0f, randomRotation);
         
+        // ★ ランダムな音符種類IDを設定（新規追加）
+        if (SpriteManager.Instance != null)
+        {
+            int randomID = SpriteManager.Instance.GetRandomSpriteID();
+            note.SetSpriteID(randomID);
+            
+            if (GameConstants.DEBUG_MODE)
+                Debug.Log($"[NoteSpawner] Spawned note with sprite ID: {randomID}");
+        }
+        
         // ランダムカラー設定
         SpriteRenderer sr = note.GetComponent<SpriteRenderer>();
         if (sr != null)

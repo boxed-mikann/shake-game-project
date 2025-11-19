@@ -87,6 +87,58 @@
 
 ---
 
+### 2025-11-19: 音符画像のバリエーション機能の実装（SpriteManager導入）
+**ステータス**: ✅ CodeArchitecture.mdに反映済み
+
+#### 変更内容
+1. **SpriteManager.cs**: 新規作成（共通スプライト・プリロード管理）
+   - 音符・休符画像をIDベースでペア管理
+   - Inspector上で画像配列を設定可能
+   - シングルトンパターンで実装
+2. **Note.cs**: 画像バリエーション対応
+   - `_spriteID`, `_cachedNoteSprite`, `_cachedRestSprite` フィールド追加
+   - `SetSpriteID(int id)` メソッド追加（画像参照をキャッシュ）
+   - `UpdateSprite()` メソッド追加（フェーズに応じた画像更新）
+   - `ResetState()` にキャッシュクリア処理追加
+3. **NoteSpawner.cs**: ランダムID設定機能追加
+   - 音符生成時に `SpriteManager.GetRandomSpriteID()` でランダムID取得
+   - `note.SetSpriteID(randomID)` で画像設定
+
+#### 理由
+- 現状は固定の1枚の音符画像のみで、視覚的バリエーションがない
+- Assets/Media/Sprites に複数の音符画像が存在するが活用されていない
+- ゲームプレイの視覚的豊かさを向上させる
+- フェーズ切り替え時の音符⇔休符の対応関係を保つ必要がある
+
+#### 設計原則の準拠
+- **IDベース管理**: 同じIDで音符⇔休符の画像をペアで取得
+- **キャッシュ最適化**: 生成時に1回だけ画像参照を取得、フェーズ切り替え時は高速アクセス
+- **共通スプライト**: 画像実体は1つ、複数のNoteから参照（メモリ効率的）
+- **後方互換性**: SpriteManagerがなくても従来のInspector設定で動作
+- **責務の分離**: SpriteManagerが画像管理、Noteが表示、NoteSpawnerが生成
+- **イベント駆動**: 既存の`PhaseManager.OnPhaseChanged`購読機能を維持
+
+#### パフォーマンス特性
+- 生成時: SpriteManagerへのアクセス **2回のみ**（音符画像1回 + 休符画像1回）
+- フェーズ切り替え時: **0回**（キャッシュから取得、フィールドアクセスのみ）
+- メモリオーバーヘッド: **16バイト/Note**（参照2つ、各8バイト）
+- 画像データ: **0バイト増加**（実体は共有、参照のみ保持）
+
+#### 影響範囲
+- SpriteManager.cs: 新規作成（Assets/Scripts/Managers/SpriteManager.cs）
+- Note.cs: フィールド追加、メソッド追加、既存メソッド修正
+- NoteSpawner.cs: SpawnOneNote() に画像ID設定処理を追加
+
+#### 反映日
+2025-11-19 - CodeArchitecture.md 以下のセクションに反映完了：
+- セクション 3.1: Managers/ - SpriteManager.cs を追加
+- セクション 3.3: Gameplay/ - Note.cs の機能説明を更新（IDベース・キャッシュ方式）
+- セクション 3.3: Gameplay/ - NoteSpawner.cs の機能説明を更新（ランダムSprite ID設定）
+- セクション 4: フォルダ構成 - SpriteManager.cs をManagersフォルダに追加
+- セクション 9.1: 実装状況 - 音符画像のバリエーション機能を完了項目に追加
+
+---
+
 ## 今後の変更記録用テンプレート
 
 ### YYYY-MM-DD: [変更タイトル]

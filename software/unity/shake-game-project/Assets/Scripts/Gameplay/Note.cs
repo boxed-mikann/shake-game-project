@@ -18,11 +18,18 @@ using UnityEngine;
 /// </summary>
 public class Note : MonoBehaviour
 {
-    [SerializeField] private Sprite noteSprite;        // 音符の画像
-    [SerializeField] private Sprite restSprite;        // 休符の画像
+    [SerializeField] private Sprite noteSprite;        // 音符の画像（非推奨・SpriteManager使用推奨）
+    [SerializeField] private Sprite restSprite;        // 休符の画像（非推奨・SpriteManager使用推奨）
     
     private Phase _currentPhase = Phase.NotePhase;
     private SpriteRenderer _spriteRenderer;
+    
+    // ★ 新規追加：音符種類ID（生成時にNoteSpawnerから設定される）
+    private int _spriteID = 0;
+    
+    // ★ 新規追加：キャッシュされた画像参照（パフォーマンス最適化）
+    private Sprite _cachedNoteSprite;   // この音符の音符画像（参照）
+    private Sprite _cachedRestSprite;   // この音符の休符画像（参照）
     
     private void Awake()
     {
@@ -56,6 +63,30 @@ public class Note : MonoBehaviour
     }
     
     /// <summary>
+    /// 音符種類IDを設定（生成時にNoteSpawnerから呼ばれる）
+    /// </summary>
+    public void SetSpriteID(int id)
+    {
+        _spriteID = id;
+        
+        // ★ ID設定時に画像参照をキャッシュ（1回だけSpriteManagerにアクセス）
+        if (SpriteManager.Instance != null)
+        {
+            _cachedNoteSprite = SpriteManager.Instance.GetNoteSpriteByID(id);
+            _cachedRestSprite = SpriteManager.Instance.GetRestSpriteByID(id);
+        }
+        else
+        {
+            // フォールバック：Inspector設定の画像を使用
+            _cachedNoteSprite = noteSprite;
+            _cachedRestSprite = restSprite;
+        }
+        
+        // IDが設定されたら、現在のフェーズに応じた画像を表示
+        UpdateSprite();
+    }
+    
+    /// <summary>
     /// フェーズを設定し、見た目を更新（Sprite）
     /// 
     /// フェーズに応じた画像を表示：
@@ -66,20 +97,42 @@ public class Note : MonoBehaviour
     public void SetPhase(Phase phase)
     {
         _currentPhase = phase;
-        
+        UpdateSprite();
+    }
+    
+    /// <summary>
+    /// 現在のフェーズに基づいて画像を更新（キャッシュから取得・高速）
+    /// </summary>
+    private void UpdateSprite()
+    {
         if (_spriteRenderer == null) return;
         
-        if (phase == Phase.NotePhase || phase == Phase.LastSprintPhase)
+        // ★ キャッシュされた参照から取得（SpriteManagerへのアクセスなし・高速）
+        if (_currentPhase == Phase.NotePhase || _currentPhase == Phase.LastSprintPhase)
         {
-            // 音符フェーズ：音符画像を表示
-            if (noteSprite != null)
+            // 音符フェーズ：キャッシュされた音符画像を表示
+            if (_cachedNoteSprite != null)
+            {
+                _spriteRenderer.sprite = _cachedNoteSprite;
+            }
+            else if (noteSprite != null)
+            {
+                // フォールバック：Inspector設定の画像を使用
                 _spriteRenderer.sprite = noteSprite;
+            }
         }
-        else if (phase == Phase.RestPhase)
+        else if (_currentPhase == Phase.RestPhase)
         {
-            // 休符フェーズ：休符画像を表示
-            if (restSprite != null)
+            // 休符フェーズ：キャッシュされた休符画像を表示
+            if (_cachedRestSprite != null)
+            {
+                _spriteRenderer.sprite = _cachedRestSprite;
+            }
+            else if (restSprite != null)
+            {
+                // フォールバック：Inspector設定の画像を使用
                 _spriteRenderer.sprite = restSprite;
+            }
         }
     }
     
@@ -103,6 +156,11 @@ public class Note : MonoBehaviour
         
         // フェーズをリセット
         _currentPhase = Phase.NotePhase;
+        
+        // ★ IDとキャッシュもリセット
+        _spriteID = 0;
+        _cachedNoteSprite = null;
+        _cachedRestSprite = null;
         
         if (GameConstants.DEBUG_MODE)
             Debug.Log("[Note] State reset");

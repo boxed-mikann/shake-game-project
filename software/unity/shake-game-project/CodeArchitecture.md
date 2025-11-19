@@ -179,6 +179,35 @@ public interface IShakeHandler {
 - **イベント**：
   - `public UnityEvent<int> OnScoreChanged;` - 現在スコアを引数
 
+#### SpriteManager.cs
+- **責務**：音符・休符画像の共通スプライト管理（プリロード方式）
+- **機能**：
+  - 複数種類の音符/休符画像をIDベースでペア管理
+  - Inspector上で画像配列を設定
+  - ランダムな音符種類IDの生成
+  - ID指定による画像取得
+- **実装方式**：シングルトンパターン
+- **重要メソッド**：
+  - `GetSpriteTypeCount()` - 音符種類の総数を取得
+  - `GetRandomSpriteID()` - ランダムな音符種類IDを取得（0 ～ Count-1）
+  - `GetNoteSpriteByID(int id)` - 指定IDの音符画像を取得
+  - `GetRestSpriteByID(int id)` - 指定IDの休符画像を取得
+- **データ構造**：
+  ```csharp
+  [SerializeField] private Sprite[] noteSprites;  // 音符画像配列
+  [SerializeField] private Sprite[] restSprites;  // 休符画像配列
+  // 対応関係：noteSprites[0] ⇔ restSprites[0]（例：quarter_note ⇔ quarter_rest）
+  ```
+- **設計の利点**：
+  - **IDベース管理**: 同じIDで音符⇔休符の対応を保持
+  - **共通スプライト**: 画像実体は1つ、複数のNoteから参照（メモリ効率的）
+  - **プリロード**: ゲーム開始時に画像をメモリ上に確保
+  - **疎結合**: Note, NoteSpawnerはSpriteManager経由でのみ画像にアクセス
+- **備考**：
+  - NoteSpawner が生成時にランダムIDを取得
+  - Note が ID に基づいて画像参照をキャッシュ
+  - フェーズ切り替え時は同じIDで音符⇔休符が自動変更
+
 ---
 
 ### 3.2 Input/
@@ -284,10 +313,11 @@ public interface IShakeHandler {
   - イベント内容の`PhaseChangeData.spawnFrequency`から「湧き出し間隔」を取得
   - Coroutineで定期的に音符をSpawn
   - `NotePool.GetNote()`でインスタンス取得
-  - 音符の初期位置・Spriteデータを設定
+  - 音符の初期位置・ランダムカラー・**ランダムSprite ID**を設定
   - タイトル復帰時にスポーンを停止
 - **重要メソッド**：
   - `StopSpawning()` - スポーンCoroutineを停止
+  - `SpawnOneNote()` - 音符を1個生成（位置、回転、色、**Sprite ID**を設定）
 - **イベント購読**：
   - `PhaseManager.OnPhaseChanged` → スポーン開始/変更
   - `GameManager.OnShowTitle` → スポーン停止
@@ -301,23 +331,53 @@ public interface IShakeHandler {
   IEnumerator SpawnNotesRoutine(float frequency) {
       while (true) {
           yield return new WaitForSeconds(frequency);
-          Note note = notePool.GetNote();
-          // 初期化処理...
+          SpawnOneNote();  // ランダムな位置・色・Sprite IDで生成
       }
+  }
+  
+  void SpawnOneNote() {
+      Note note = NotePool.GetNote();
+      // 位置・回転設定...
+      
+      // ★ ランダムな音符種類IDを設定
+      if (SpriteManager.Instance != null) {
+          int randomID = SpriteManager.Instance.GetRandomSpriteID();
+          note.SetSpriteID(randomID);
+      }
+      
+      // ランダムカラー設定...
+      // NoteManager登録...
   }
   ```
 - **備考**：
   - `spawnFrequency`は`Phase_Sequence`に含まれるデータを想定
   - フェーズ変更時に湧き出し速度も自動的に変更
+  - **SpriteManager連携**: 生成時にランダムIDを取得し、音符の画像バリエーションを実現
 
 #### Note.cs (Prefabコンポーネント)
 - **責補**：個別音符の状態・ビジュアル管理
 - **機能**：
-  - `ResetState()` - 位置、回転をリセット
-  - `SetData(NoteData data)` - Sprite、タイプ(8分音符等)を設定
+  - `ResetState()` - 位置、回転、キャッシュをリセット
+  - `SetSpriteID(int id)` - 音符種類IDを設定し、画像参照をキャッシュ
+  - `SetPhase(Phase phase)` - フェーズ設定とSprite更新
+  - `UpdateSprite()` - 現在のフェーズに基づいて画像を更新（キャッシュから取得）
   - `Destroy()`相当の動作時に`NotePool.ReturnNote(this)`を呼び出し
 - **イベント購読**：
-  - `PhaseManager.OnPhaseChanged` - 必要に応じて見た目更新 休符⇔音符
+  - `PhaseManager.OnPhaseChanged` - フェーズに応じて見た目更新（音符⇔休符）
+- **画像管理（IDベース・キャッシュ方式）**：
+  - 生成時に `SpriteManager` から画像参照を取得してキャッシュ
+  - フェーズ切り替え時はキャッシュから高速取得（SpriteManagerへのアクセスなし）
+  - 後方互換性：SpriteManagerがない場合はInspector設定の画像を使用
+- **データ構造**：
+  ```csharp
+  private int _spriteID = 0;                  // 音符種類ID
+  private Sprite _cachedNoteSprite;           // キャッシュされた音符画像
+  private Sprite _cachedRestSprite;           // キャッシュされた休符画像
+  ```
+- **パフォーマンス特性**：
+  - 生成時: SpriteManagerへのアクセス 2回（音符画像1回 + 休符画像1回）
+  - フェーズ切り替え時: 0回（キャッシュから取得、約1 CPU cycle）
+  - メモリオーバーヘッド: 16バイト/Note（参照2つ）
 
 #### NoteManager.cs（新規）
 - **責補**：表示中の全Noteの時系列管理
@@ -475,7 +535,8 @@ Assets/
 │   │   ├── GameManager.cs
 │   │   ├── PhaseManager.cs
 │   │   ├── FreezeManager.cs
-│   │   └── ScoreManager.cs
+│   │   ├── ScoreManager.cs
+│   │   └── SpriteManager.cs          ※ 音符・休符画像の共通管理
 │   │
 │   ├── Input/
 │   │   ├── IInputSource.cs
@@ -655,6 +716,11 @@ Assets/
    - DRY原則に基づき、起動時とタイトル復帰を統一処理
    - 全マネージャーの状態リセット処理実装
    - イベント駆動設計により、疎結合を維持したまま実装
+6. **音符画像のバリエーション機能** - SpriteManager導入による共通スプライト管理実装完了（2025-11-19）
+   - IDベースで音符⇔休符の画像をペア管理
+   - 画像参照キャッシュによるパフォーマンス最適化（生成時2回、切り替え時0回のアクセス）
+   - 複数種類の音符画像によるゲームプレイの視覚的バリエーション向上
+   - 後方互換性の維持（SpriteManagerなしでも動作）
 
 ### 9.2 今後の開発方針
 - このドキュメントをAI参照用の正確な設計書として維持

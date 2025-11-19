@@ -4,568 +4,315 @@
 
 ## 要修正項目
 
-1. 音符の画像のバリエーションを増やす。
-  - プリロード？共通スプライト？ってなに？
-
-### 修正計画 #1: 音符画像のバリエーション追加（2025-11-19 改訂版）
+### 修正計画概要（2025-11-19作成）
 
 ---
 
-## 🔧 Copilot実装指示書（簡潔版）
+### 1. 休符モードの時に生成された音符が休符になっていない
 
-### 概要
-複数種類の音符・休符画像を使用できるようにする。IDベースで音符⇔休符の対応を保ち、フェーズ切り替え時に自動で画像が変わる仕組みを実装。
+**現状分析**：
+- `NoteSpawner.cs`（150-228行目）でSpawn時に`SetSpriteID()`を呼んでいる
+- `Note.cs`（1-168行目）で`PhaseManager.OnPhaseChanged`を購読して画像を切り替え
+- **問題点**：生成時に現在のフェーズ情報が`Note`に伝わっていない
+  - `NoteSpawner`は生成時にSpriteIDのみ設定し、フェーズは設定していない
+  - `Note`はイベント購読で次のフェーズ変更時に初めて画像を更新
+  - つまり、RestPhaseで生成された音符は、生成直後は音符画像のまま表示される
 
-### 実装内容
+**修正方針（CodeArchitecture.md準拠）**：
+1. `NoteSpawner`はフェーズ変更を保持（既に`PhaseManager.OnPhaseChanged`を購読中）
+2. `SpawnOneNote()`で現在保持しているフェーズを使用
+3. `Note.SetPhase(Phase phase)`を生成直後に呼び出す
+4. これにより生成時に正しい画像（音符/休符）が即座に表示される
 
-#### 1. SpriteManager.cs を新規作成
-**パス**: `Assets/Scripts/Managers/SpriteManager.cs`
+**設計的考察**：
+- **選択肢1**: `PhaseManager.Instance.GetCurrentPhase()`を毎回呼ぶ
+  - メリット: シンプル
+  - デメリット: シングルトン参照のオーバーヘッド
+- **選択肢2**: `NoteSpawner`がフェーズ情報をローカル保持（推奨）
+  - メリット: 既に`OnPhaseChanged`を購読しており、`PhaseChangeData`を受け取っている
+  - メリット: フェーズ情報をフィールドに保存すれば、Spawn時は即座にアクセス可能
+  - メリット: PhaseManagerへの依存を減らし、疎結合を維持
+  - 実装: `private Phase _currentPhase`フィールドを追加
 
-```csharp
-using UnityEngine;
+**修正箇所**：
+- ファイル：`Assets/Scripts/Gameplay/NoteSpawner.cs`
+- 追加フィールド：`private Phase _currentPhase = Phase.NotePhase;`
+- 修正メソッド1：`OnPhaseChanged()`でフェーズを保存
+- 修正メソッド2：`SpawnOneNote()`で保存したフェーズを使用
+- 追加コード（SpawnOneNote内）：
+  ```csharp
+  // 現在のフェーズを設定（生成時に正しい画像を表示）
+  note.SetPhase(_currentPhase);
+  ```
 
-/// <summary>
-/// ゲーム全体の音符・休符画像を管理（共通スプライト・プリロード方式）
-/// </summary>
-public class SpriteManager : MonoBehaviour
-{
-    [SerializeField] private Sprite[] noteSprites;     // 音符画像配列
-    [SerializeField] private Sprite[] restSprites;     // 休符画像配列
-    
-    private static SpriteManager _instance;
-    public static SpriteManager Instance
-    {
-        get
-        {
-            if (_instance == null)
-            {
-                _instance = FindObjectOfType<SpriteManager>();
-            }
-            return _instance;
-        }
-    }
-    
-    private void Awake()
-    {
-        if (_instance != null && _instance != this)
-        {
-            Destroy(gameObject);
-            return;
-        }
-        _instance = this;
-    }
-    
-    /// <summary>
-    /// 音符種類の総数を取得
-    /// </summary>
-    public int GetSpriteTypeCount()
-    {
-        return Mathf.Min(noteSprites.Length, restSprites.Length);
-    }
-    
-    /// <summary>
-    /// ランダムな音符種類IDを取得
-    /// </summary>
-    public int GetRandomSpriteID()
-    {
-        int count = GetSpriteTypeCount();
-        return count > 0 ? Random.Range(0, count) : 0;
-    }
-    
-    /// <summary>
-    /// 指定IDの音符画像を取得
-    /// </summary>
-    public Sprite GetNoteSpriteByID(int id)
-    {
-        if (id >= 0 && id < noteSprites.Length)
-            return noteSprites[id];
-        return null;
-    }
-    
-    /// <summary>
-    /// 指定IDの休符画像を取得
-    /// </summary>
-    public Sprite GetRestSpriteByID(int id)
-    {
-        if (id >= 0 && id < restSprites.Length)
-            return restSprites[id];
-        return null;
-    }
-}
-```
+**実装手順**：
+1. `NoteSpawner.cs`にフィールド追加：`private Phase _currentPhase = Phase.NotePhase;`
+2. `OnPhaseChanged(PhaseChangeData phaseData)`メソッド内の先頭で`_currentPhase = phaseData.phaseType;`を追加
+3. `SpawnOneNote()`の`note.SetSpriteID(randomID)`の直後に`note.SetPhase(_currentPhase);`を追加
+4. コンパイルエラーチェック
+5. デバッグモードで動作確認（RestPhaseで休符画像が即座に表示されるか）
 
-#### 2. Note.cs を修正
-**パス**: `Assets/Scripts/Gameplay/Note.cs`
-
-**追加するフィールド**:
-```csharp
-private int _spriteID = 0;                  // 音符種類ID
-private Sprite _cachedNoteSprite;           // キャッシュされた音符画像
-private Sprite _cachedRestSprite;           // キャッシュされた休符画像
-```
-
-**追加するメソッド**:
-```csharp
-/// <summary>
-/// 音符種類IDを設定（生成時にNoteSpawnerから呼ばれる）
-/// </summary>
-public void SetSpriteID(int id)
-{
-    _spriteID = id;
-    
-    // ID設定時に画像参照をキャッシュ
-    if (SpriteManager.Instance != null)
-    {
-        _cachedNoteSprite = SpriteManager.Instance.GetNoteSpriteByID(id);
-        _cachedRestSprite = SpriteManager.Instance.GetRestSpriteByID(id);
-    }
-    else
-    {
-        // フォールバック：Inspector設定の画像を使用
-        _cachedNoteSprite = noteSprite;
-        _cachedRestSprite = restSprite;
-    }
-    
-    // 現在のフェーズに応じた画像を表示
-    UpdateSprite();
-}
-```
-
-**SetPhase()メソッドを修正**:
-```csharp
-public void SetPhase(Phase phase)
-{
-    _currentPhase = phase;
-    UpdateSprite();
-}
-
-/// <summary>
-/// 現在のフェーズに基づいて画像を更新（キャッシュから取得）
-/// </summary>
-private void UpdateSprite()
-{
-    if (_spriteRenderer == null) return;
-    
-    if (_currentPhase == Phase.NotePhase || _currentPhase == Phase.LastSprintPhase)
-    {
-        if (_cachedNoteSprite != null)
-            _spriteRenderer.sprite = _cachedNoteSprite;
-    }
-    else if (_currentPhase == Phase.RestPhase)
-    {
-        if (_cachedRestSprite != null)
-            _spriteRenderer.sprite = _cachedRestSprite;
-    }
-}
-```
-
-**ResetState()メソッドを修正**:
-```csharp
-public void ResetState()
-{
-    transform.localPosition = Vector3.zero;
-    transform.localRotation = Quaternion.identity;
-    transform.localScale = Vector3.one;
-    
-    _currentPhase = Phase.NotePhase;
-    _spriteID = 0;
-    _cachedNoteSprite = null;  // キャッシュもクリア
-    _cachedRestSprite = null;
-    
-    if (GameConstants.DEBUG_MODE)
-        Debug.Log("[Note] State reset");
-}
-```
-
-#### 3. NoteSpawner.cs を修正
-**パス**: `Assets/Scripts/Gameplay/NoteSpawner.cs`
-
-**SpawnOneNote()メソッド内に追加**（ランダムな色設定の直前）:
-```csharp
-// ランダムな音符種類IDを設定
-if (SpriteManager.Instance != null)
-{
-    int randomID = SpriteManager.Instance.GetRandomSpriteID();
-    note.SetSpriteID(randomID);
-    
-    if (GameConstants.DEBUG_MODE)
-        Debug.Log($"[NoteSpawner] Spawned note with sprite ID: {randomID}");
-}
-
-// ランダムな色設定（既存コード）
-SpriteRenderer sr = note.GetComponent<SpriteRenderer>();
-// ...
-```
-
-### Unity Editor設定手順
-
-1. **SpriteManagerオブジェクト作成**
-   - Hierarchy: `Managers` フォルダ配下に空のGameObject作成
-   - 名前を `SpriteManager` に変更
-   - `SpriteManager.cs` コンポーネントをアタッチ
-
-2. **画像配列の設定**（Inspector）
-   - **Note Sprites** 配列（サイズ3）:
-     - [0] `Assets/Media/Sprites/quarter_note.png`
-     - [1] `Assets/Media/Sprites/half_note.png`
-     - [2] `Assets/Media/Sprites/whole_note.png`
-   - **Rest Sprites** 配列（サイズ3）:
-     - [0] `Assets/Media/Sprites/quarter_rest.png`
-     - [1] `Assets/Media/Sprites/half_rest.png` ※なければquarter_restで代用
-     - [2] `Assets/Media/Sprites/whole_rest.png`
-
-### 動作確認
-- [ ] 音符生成時に複数種類の画像が表示される
-- [ ] フェーズ切り替え時に音符⇔休符が正しく切り替わる（同じ種類のまま）
-- [ ] コンソールにエラーが出ない
-
-### 設計のポイント
-- **IDベース**: 同じIDで音符⇔休符の画像をペアで管理
-- **キャッシュ**: 生成時に画像参照をキャッシュ、フェーズ切り替え時は高速アクセス
-- **既存機能維持**: `PhaseManager.OnPhaseChanged`購読機能はそのまま
-- **後方互換性**: SpriteManagerがなくても従来の方式で動作
+**重要**: `OnPhaseChanged()`では既に`StartCoroutine(SpawnLoop(...))`を呼んでいるため、フェーズ保存は**Coroutine開始前**に行う必要がある。
 
 ---
 
-### 🗂️ 検討経緯（参考）
+### 2. ラストスパートでもフリーズは効くようにする
 
-#### 問題の原因
-現在の実装では、以下の問題がある：
-1. **Note.cs**: `noteSprite`と`restSprite`の2つのフィールドしかなく、各Noteインスタンスが固定の1枚の画像しか持たない
-2. **NoteSpawner.cs**: 音符生成時に色はランダム化しているが、画像は固定
-3. **リソース管理の欠如**: Assets/Media/Spritesに複数の音符画像（half_note.png, quarter_note.png, whole_note.pngなど）があるが、活用されていない
-4. **重要な既存機能**: Note.csは`PhaseManager.OnPhaseChanged`を購読して、フェーズ切り替え時に音符⇔休符の画像を自動切り替えしている
-
-#### 「共通スプライト」とは？
-CodeArchitecture.mdの「共通仕様」「プリロード」という記述から推測される概念：
-- **共通スプライト**: ゲーム全体で共有される画像リソースのこと（各Noteインスタンスが個別に持つのではなく）
-- **プリロード**: ゲーム開始時に全画像をメモリ上に読み込んでおき、実行時のロード時間を削減
-- **現状**: 実現されていない（各NoteがInspectorで設定された1枚の画像を参照するのみ）
-
-#### CodeArchitecture.mdに則った設計方針
-
-CodeArchitecture.mdには以下の設計が記載されている：
-- **Note.cs**: `SetData(NoteData data)` - Sprite、タイプ(8分音符等)を設定
-- **リソース管理・プリロード**: ゲーム開始時にSprite等を全てメモリ上に確保するPreloaderマネージャー（将来機能）
-- **責務の分離**: Noteは見た目・状態のみ、生成制御はNoteSpawnerが担当
-- **イベント駆動**: Note.csは`PhaseManager.OnPhaseChanged`を購読してフェーズ切り替えに対応
-
-#### 修正計画（IDベース画像管理方式）
-
-提案いただいた「音符種類IDで音符⇔休符の対応を保つ」方式を採用します。
-
-##### Phase 1: SpriteManagerの作成（IDベース共通スプライト管理）
-**目的**: 複数の音符/休符画像をペアで管理し、ID指定で取得できるようにする
-
-**実装内容**:
-```csharp
-// Assets/Scripts/Managers/SpriteManager.cs
-/// <summary>
-/// ゲーム全体の音符・休符画像を管理（共通スプライト・プリロード方式）
-/// </summary>
-public class SpriteManager : MonoBehaviour {
-    [SerializeField] private Sprite[] noteSprites;     // 音符画像配列（Inspector設定）
-    [SerializeField] private Sprite[] restSprites;     // 休符画像配列（Inspector設定）
-    
-    private static SpriteManager _instance;
-    public static SpriteManager Instance { get; }
-    
-    /// <summary>
-    /// 音符種類の総数を取得（noteSpritesとrestSpritesの長さは同じ想定）
-    /// </summary>
-    public int GetSpriteTypeCount() {
-        return Mathf.Min(noteSprites.Length, restSprites.Length);
-    }
-    
-    /// <summary>
-    /// ランダムな音符種類IDを取得（0 ～ GetSpriteTypeCount()-1）
-    /// </summary>
-    public int GetRandomSpriteID() {
-        int count = GetSpriteTypeCount();
-        return count > 0 ? Random.Range(0, count) : 0;
-    }
-    
-    /// <summary>
-    /// 指定IDの音符画像を取得
-    /// </summary>
-    public Sprite GetNoteSpriteByID(int id) {
-        if (id >= 0 && id < noteSprites.Length)
-            return noteSprites[id];
-        return null;
-    }
-    
-    /// <summary>
-    /// 指定IDの休符画像を取得
-    /// </summary>
-    public Sprite GetRestSpriteByID(int id) {
-        if (id >= 0 && id < restSprites.Length)
-            return restSprites[id];
-        return null;
-    }
-}
-```
-
-**設計の根拠**:
-- **IDベース管理**: 同じIDで音符と休符の画像をペアで取得（例：ID=0なら`quarter_note.png`と`quarter_rest.png`）
-- **配列の対応関係**: `noteSprites[0]`と`restSprites[0]`は対応する音符・休符のペア
-- **プリロード**: Awakeで画像を配列に保持（共通スプライト、メモリ上に確保）
-- **疎結合**: 他のクラスはSpriteManager経由でのみ画像にアクセス
-
-##### Phase 2: Note.csの修正（最適化版）
-**実装内容**:
-```csharp
-public class Note : MonoBehaviour {
-    // ★ Inspector設定のフィールドは削除せず残す（後方互換性のため警告のみ）
-    [SerializeField] private Sprite noteSprite;        // 音符の画像（非推奨・SpriteManager使用推奨）
-    [SerializeField] private Sprite restSprite;        // 休符の画像（非推奨・SpriteManager使用推奨）
-    
-    private Phase _currentPhase = Phase.NotePhase;
-    private SpriteRenderer _spriteRenderer;
-    
-    // ★ 新規追加：音符種類ID（生成時にNoteSpawnerから設定される）
-    private int _spriteID = 0;
-    
-    // ★ 新規追加：キャッシュされた画像参照（パフォーマンス最適化）
-    private Sprite _cachedNoteSprite;   // この音符の音符画像（参照）
-    private Sprite _cachedRestSprite;   // この音符の休符画像（参照）
-    
-    // ... Awake, OnEnable, OnDisable は既存のまま ...
-    
-    /// <summary>
-    /// 音符種類IDを設定（生成時にNoteSpawnerから呼ばれる）
-    /// </summary>
-    public void SetSpriteID(int id) {
-        _spriteID = id;
-        
-        // ★ ID設定時に画像参照をキャッシュ（1回だけSpriteManagerにアクセス）
-        if (SpriteManager.Instance != null) {
-            _cachedNoteSprite = SpriteManager.Instance.GetNoteSpriteByID(id);
-            _cachedRestSprite = SpriteManager.Instance.GetRestSpriteByID(id);
-        } else {
-            // フォールバック：Inspector設定の画像を使用
-            _cachedNoteSprite = noteSprite;
-            _cachedRestSprite = restSprite;
-        }
-        
-        // IDが設定されたら、現在のフェーズに応じた画像を表示
-        UpdateSprite();
-    }
-    
-    /// <summary>
-    /// フェーズ変更イベントハンドラ（既存機能を維持）
-    /// PhaseManager.OnPhaseChanged から呼び出される
-    /// </summary>
-    private void OnPhaseChanged(PhaseChangeData phaseData) {
-        SetPhase(phaseData.phaseType);
-    }
-    
-    /// <summary>
-    /// フェーズを設定し、見た目を更新（既存機能を維持）
-    /// </summary>
-    public void SetPhase(Phase phase) {
-        _currentPhase = phase;
-        UpdateSprite();
-    }
-    
-    /// <summary>
-    /// 現在のフェーズに基づいて画像を更新（キャッシュから取得・高速）
-    /// </summary>
-    private void UpdateSprite() {
-        if (_spriteRenderer == null) return;
-        
-        // ★ キャッシュされた参照から取得（SpriteManagerへのアクセスなし・高速）
-        if (_currentPhase == Phase.NotePhase || _currentPhase == Phase.LastSprintPhase) {
-            if (_cachedNoteSprite != null) {
-                _spriteRenderer.sprite = _cachedNoteSprite;
-            }
-        } else if (_currentPhase == Phase.RestPhase) {
-            if (_cachedRestSprite != null) {
-                _spriteRenderer.sprite = _cachedRestSprite;
-            }
-        }
-    }
-    
-    /// <summary>
-    /// 状態をリセット（既存機能を維持）
-    /// </summary>
-    public void ResetState() {
-        transform.localPosition = Vector3.zero;
-        transform.localRotation = Quaternion.identity;
-        transform.localScale = Vector3.one;
-        
-        _currentPhase = Phase.NotePhase;
-        _spriteID = 0;  // ★ IDもリセット
-        
-        // ★ キャッシュもクリア（プールに戻るとき）
-        _cachedNoteSprite = null;
-        _cachedRestSprite = null;
-        
-        if (GameConstants.DEBUG_MODE)
-            Debug.Log("[Note] State reset");
-    }
-}
-```
-
-**変更の根拠**:
-- **既存機能の維持**: `PhaseManager.OnPhaseChanged`購読機能はそのまま維持
-- **IDベース管理**: 生成時に設定されたIDで音符⇔休符の対応を保つ
-- **フェーズ切り替え対応**: フェーズが変わるとIDは同じまま、音符⇔休符の画像だけ切り替わる
-- **後方互換性**: SpriteManagerがない場合でも従来の方式で動作
-- **パフォーマンス最適化**: 
-  - 画像参照をキャッシュ（生成時に1回だけSpriteManagerにアクセス）
-  - フェーズ切り替え時はキャッシュから取得（高速）
-  - `Sprite`は参照型なので、メモリ効率も良好
-
-**Spriteの仕組み（重要）**:
-- **Sprite = 参照型**: 画像データの実体はメモリ上の1箇所、複数のオブジェクトから参照可能
-- **共通スプライトの意味**: 
-  - ❌ 各Noteが画像データのコピーを持つ（メモリ無駄）
-  - ✅ 各Noteが共通の画像データへの参照を持つ（メモリ効率的）
-- **キャッシュの効果**:
+**現状分析**：
+- `FreezeManager.cs`（107-113行目）でLastSprintPhase判定が存在
+- コード：
+  ```csharp
+  if (PhaseManager.Instance != null && 
+      PhaseManager.Instance.GetCurrentPhase() == Phase.LastSprintPhase)
+  {
+      Debug.Log("[FreezeManager] LastSprintPhase detected, freeze disabled");
+      return;  // ★ ここでフリーズを無効化
+  }
   ```
-  [メモリ構造]
-  SpriteManager.noteSprites[0] ← quarter_note.png（実体は1つ）
-         ↑参照              ↑参照           ↑参照
-  Note1._cachedNoteSprite  Note2._cachedNoteSprite  Note3._cachedNoteSprite
-  
-  → 画像データは1つ、参照だけが複数（合計8バイト×Note数程度）
+- **問題点**：要件変更により、ラストスパートでもフリーズを有効にする必要がある
+
+**修正方針（CodeArchitecture.md準拠）**：
+1. `FreezeManager.StartFreeze()`からLastSprintPhase判定を削除
+2. コメントも削除（ドキュメントから「無効化」記述を削除）
+3. シンプルな実装に戻す
+
+**修正箇所**：
+- ファイル：`Assets/Scripts/Managers/FreezeManager.cs`
+- メソッド：`StartFreeze(float duration)`（約100-120行目）
+- 削除対象：
+  ```csharp
+  // LastSprintPhase 中は凍結しない（無効化）
+  if (PhaseManager.Instance != null && 
+      PhaseManager.Instance.GetCurrentPhase() == Phase.LastSprintPhase)
+  {
+      if (GameConstants.DEBUG_MODE)
+          Debug.Log("[FreezeManager] LastSprintPhase detected, freeze disabled");
+      return;
+  }
   ```
-- **パフォーマンス比較**:
-  - ❌ 毎回アクセス: `SpriteManager.Instance.GetNoteSpriteByID(_spriteID)`
-    - シングルトンプロパティアクセス + 配列アクセス + 境界チェック
-  - ✅ キャッシュ: `_cachedNoteSprite`
-    - フィールドアクセスのみ（1命令、約1 CPU cycle）
 
-##### Phase 3: NoteSpawner.csの修正
-**実装内容**:
-```csharp
-private void SpawnOneNote() {
-    Note note = NotePool.Instance.GetNote();
-    // ...既存の位置・回転設定...
-    
-    // ★ ランダムな音符種類IDを設定（新規追加）
-    if (SpriteManager.Instance != null) {
-        int randomID = SpriteManager.Instance.GetRandomSpriteID();
-        note.SetSpriteID(randomID);
-        
-        if (GameConstants.DEBUG_MODE)
-            Debug.Log($"[NoteSpawner] Spawned note with sprite ID: {randomID}");
-    }
-    
-    // ランダムな色設定（既存）
-    SpriteRenderer sr = note.GetComponent<SpriteRenderer>();
-    if (sr != null) {
-        sr.color = GetRandomColor();
-    }
-    
-    // NoteManager に登録（既存）
-    // ...
-}
-```
+**実装手順**：
+1. `FreezeManager.cs`の`StartFreeze()`メソッドを開く
+2. 上記のLastSprintPhase判定ブロック（約107-114行目）を削除
+3. クラスドキュメント（13行目付近）の「LastSprintPhase 中は無効」記述も削除
+4. コンパイルエラーチェック
+5. デバッグモードで動作確認（LastSprintPhaseでもフリーズが発動するか）
 
-**変更の根拠**:
-- **生成時にID決定**: 音符が生成される瞬間にランダムなIDを割り当て
-- **フェーズは自動対応**: Noteが`PhaseManager.OnPhaseChanged`を購読しているため、IDだけ設定すればOK
-- **シンプル**: NoteSpawner側ではフェーズを意識する必要なし
+---
 
-#### 実装の流れ（最適化版）
+### 3. タイマー表示(TextMeshPro)
 
-**音符の生成時**:
-1. `NoteSpawner.SpawnOneNote()` が `SpriteManager.GetRandomSpriteID()` でランダムID取得（例：ID=1）
-2. `note.SetSpriteID(1)` でNoteにIDを設定
-3. Note内部で画像参照をキャッシュ（**1回だけSpriteManagerにアクセス**）:
+**現状分析**：
+- ゲーム全体の残り時間を表示するUIが存在しない
+- `PhaseProgressBar.cs`はフェーズごとの進行度を管理（個別フェーズのタイマー）
+- ゲーム全体の制限時間は`GameConstants.GAME_DURATION`で定義（PHASE_SEQUENCEの合計）
+- プレイ時間は1分以下（約60秒）なので秒数表示で十分
+- **重要**: PhaseManagerが既に全フェーズ完了時に`GameManager.EndGame()`を呼んでいる
+
+**修正方針（CodeArchitecture.md準拠）**：
+1. 新規UIクラス`TimerDisplay.cs`を作成（`Assets/Scripts/UI/`）
+2. `ScoreDisplay.cs`（既存）をテンプレートとして活用
+3. 責務：ゲーム全体の残り時間をTextMeshProで秒数表示（"45s"形式）
+4. `GameManager.OnGameStart`を購読してタイマー開始
+5. 毎フレームUpdate()で残り時間を減算し、TextMeshProに反映
+6. **表示のみに徹する**：ゲーム終了はPhaseManagerが担当（責務分離）
+7. StringBuilderでGC削減（ScoreDisplay同様）
+
+**実装内容**：
+- ファイル：`Assets/Scripts/UI/TimerDisplay.cs`（新規作成）
+- 主要機能：
+  - `[SerializeField] private TextMeshProUGUI _timerText;`
+  - `GameManager.OnGameStart`を購読（ゲーム全体のタイマー開始）
+  - `GameManager.OnShowTitle`を購読（タイマーリセット）
+  - `Update()`で`_remainingTime -= Time.deltaTime`
+  - 表示形式："45s"（秒数のみ、整数表示）
+  - StringBuilderで文字列構築
+  - **注意**: 0秒になっても`GameManager.EndGame()`は呼ばない（PhaseManagerが担当）
+
+**設計上の重要ポイント**：
+- **責務分離**: ゲーム終了判定はPhaseManagerの責務
+- **TimerDisplayの責務**: 視覚的なフィードバックのみ（表示専用）
+- PhaseManagerが全フェーズ完了時に`GameManager.EndGame()`を呼ぶ仕組みが既に存在
+- タイマー表示が0になる直前にPhaseManagerがゲームを終了するため、自然な動作
+
+**フェーズタイマーとの違い**：
+- `PhaseProgressBar`：個別フェーズの進行度（Slider + 内部タイマー）
+- `TimerDisplay`：ゲーム全体の残り時間（TextMeshPro表示）
+- 完全に独立した責務
+
+**実装手順**：
+1. `Assets/Scripts/UI/TimerDisplay.cs`を新規作成
+2. `ScoreDisplay.cs`を参考に基本構造をコピー
+3. フィールド：`_timerText`, `_remainingTime`, `_isRunning`
+4. `Start()`で`GameManager.OnGameStart.AddListener(OnGameStart)`と`GameManager.OnShowTitle.AddListener(OnShowTitle)`
+5. `OnGameStart()`で`_remainingTime = GameConstants.GAME_DURATION; _isRunning = true;`
+6. `OnShowTitle()`で`_isRunning = false; _remainingTime = 0f;`（タイマーリセット）
+7. `Update()`で残り時間を減算、表示更新（0未満にならないようClamp）
+8. フォーマット関数：`FormatTime(float seconds)` → "45s"形式（整数秒）
+9. `OnDestroy()`でイベント購読解除
+10. UnityエディタでTextMeshProコンポーネントをアタッチ
+11. 動作確認
+
+---
+
+### 4. フェーズ表示(TextMeshPro)
+
+**現状分析**：
+- フェーズ情報を表示するUIクラスが存在しない
+- `PhaseChangeData`には`phaseType`（NotePhase等）と`phaseIndex`が含まれる
+
+**修正方針（CodeArchitecture.md準拠）**：
+1. 新規UIクラス`PhaseDisplay.cs`を作成（`Assets/Scripts/UI/`）
+2. `ScoreDisplay.cs`をテンプレートとして活用
+3. 責務：現在のフェーズ名をTextMeshProで表示
+4. PhaseManager.OnPhaseChangedを購読
+5. フェーズタイプに応じた表示名を定義（"♪ 音符フェーズ", "💤 休符フェーズ", "🔥 ラストスパート"等）
+
+**実装内容**：
+- ファイル：`Assets/Scripts/UI/PhaseDisplay.cs`（新規作成）
+- 主要機能：
+  - `[SerializeField] private TextMeshProUGUI _phaseText;`
+  - `PhaseManager.OnPhaseChanged`を購読
+  - フェーズタイプごとの表示名マッピング
+  - StringBuilderでGC削減
+
+**実装手順**：
+1. `Assets/Scripts/UI/PhaseDisplay.cs`を新規作成
+2. `ScoreDisplay.cs`を参考に基本構造をコピー
+3. フィールド：`_phaseText`
+4. `OnPhaseChanged(PhaseChangeData data)`でフェーズ名を取得
+5. フェーズタイプマッピング関数：
+   ```csharp
+   private string GetPhaseName(Phase phase)
+   {
+       switch (phase)
+       {
+           case Phase.NotePhase: return "♪ 音符フェーズ";
+           case Phase.RestPhase: return "💤 休符フェーズ";
+           case Phase.LastSprintPhase: return "🔥 ラストスパート";
+           default: return "不明";
+       }
+   }
    ```
-   _cachedNoteSprite = SpriteManager.GetNoteSpriteByID(1)  // → quarter_note.png への参照
-   _cachedRestSprite = SpriteManager.GetRestSpriteByID(1)  // → quarter_rest.png への参照
-   ```
-4. `UpdateSprite()` が呼ばれ、現在のフェーズに応じた画像を表示
-   - NotePhaseなら `_cachedNoteSprite` → `quarter_note.png`
-   - RestPhaseなら `_cachedRestSprite` → `quarter_rest.png`
+6. UnityエディタでTextMeshProコンポーネントをアタッチ
+7. 動作確認
 
-**フェーズ切り替え時（高速・最適化）**:
-1. `PhaseManager` が `OnPhaseChanged` イベントを発行
-2. 各 `Note` が `OnPhaseChanged()` ハンドラで `SetPhase()` を呼び出し
-3. `UpdateSprite()` が実行され、**キャッシュから取得**（SpriteManagerアクセスなし）
-   - ID=1の音符が NotePhase→RestPhase に切り替わると
-   - `_cachedNoteSprite` → `_cachedRestSprite` に切り替え
-   - `quarter_note.png` → `quarter_rest.png` に自動変更（実体は参照のみ、コピーなし）
+---
 
-**パフォーマンス特性**:
-- 生成時: SpriteManagerへのアクセス **2回のみ**（音符画像1回 + 休符画像1回）
-- フェーズ切り替え時: **0回**（キャッシュから取得）
-- メモリオーバーヘッド: **16バイト/Note**（参照2つ、各8バイト）
-- 画像データ: **0バイト増加**（実体は共有、参照のみ保持）
+### 5. 最終スコア表示の実装
 
-#### Unity Editor設定
+**現状分析**：
+- `ScoreDisplay.cs`は既に存在し、リアルタイムスコアを表示
+- `PanelController.cs`でリザルトパネルを表示（GameManager.OnGameOverで発火）
+- **問題点**：リザルトパネル内に最終スコアを表示するUIクラスが存在しない
 
-1. **SpriteManagerオブジェクト作成**
-   - Hierarchy: `Managers` → 右クリック → Create Empty → 名前を `SpriteManager` に変更
-   - Add Component → SpriteManager.cs
+**修正方針（CodeArchitecture.md準拠）**：
+1. 新規UIクラス`ResultScoreDisplay.cs`を作成（`Assets/Scripts/UI/`）
+2. `ScoreDisplay.cs`と類似だが、購読イベントが異なる
+3. 責務：ゲーム終了時の最終スコアを表示（GameManager.OnGameOverで取得）
+4. ScoreManager.GetScore()で最終スコアを取得
+5. TextMeshProに"Final Score: 123"形式で表示
+
+**実装内容**：
+- ファイル：`Assets/Scripts/UI/ResultScoreDisplay.cs`（新規作成）
+- 主要機能：
+  - `[SerializeField] private TextMeshProUGUI _finalScoreText;`
+  - `GameManager.OnGameOver`を購読
+  - `ScoreManager.GetScore()`で最終スコアを取得
+  - 表示形式："Final Score: 123"
+  - StringBuilderでGC削減
+
+**実装手順**：
+1. `Assets/Scripts/UI/ResultScoreDisplay.cs`を新規作成
+2. `ScoreDisplay.cs`を参考に基本構造をコピー
+3. フィールド：`_finalScoreText`, `_prefix = "Final Score: "`
+4. `Start()`で`GameManager.OnGameOver.AddListener(OnGameOver)`
+5. `OnGameOver()`で`ScoreManager.Instance.GetScore()`を取得
+6. StringBuilderで"Final Score: 123"を構築して表示
+7. `OnDestroy()`でイベント購読解除（メモリリーク防止）
+8. Unityエディタでリザルトパネル内にTextMeshProを配置
+9. InspectorでResultScoreDisplayをアタッチ
+10. 動作確認
+
+**プレイ中スコアとの違い**：
+- `ScoreDisplay`：ScoreManager.OnScoreChangedを購読（リアルタイム更新）
+- `ResultScoreDisplay`：GameManager.OnGameOverを購読（1回だけ表示）
+- 重なる部分：StringBuilderの使い方、TextMeshProへの反映方法
+- 独立性：2つのクラスは完全に独立（疎結合）
+
+**注意事項**：
+- リザルトパネル内のTextMeshProコンポーネントは、ゲーム開始時は非表示（PanelControllerが管理）
+- `OnGameOver`イベント発火時にパネルが表示され、同時にスコアが更新される
+- タイトル復帰時は自動的にリザルトパネルが非表示になるため、特別なリセット処理は不要
+
+---
+
+### 実装優先順位
+
+1. **修正1（休符表示）**：最優先（ゲームプレイの視覚的正確性に直結）
+2. **修正2（フリーズ有効化）**：高優先（ゲームバランスに影響）
+3. **修正3（タイマー表示）**：中優先（ユーザビリティ向上）
+4. **修正4（フェーズ表示）**：中優先（ユーザビリティ向上）
+5. **修正5（最終スコア表示）**：低優先（機能完全性）
+
+---
+
+## 修正計画の設計整合性チェック（2025-11-19精査完了）
+
+### ✅ 確認済み事項
+
+#### 1. イベント購読の整合性
+- **修正1（NoteSpawner）**: 既に`PhaseManager.OnPhaseChanged`を購読中 → フェーズ情報をローカル保持
+- **修正2（FreezeManager）**: コード削除のみ、イベント購読変更なし
+- **修正3（TimerDisplay）**: `GameManager.OnGameStart`と`OnShowTitle`を購読 → 適切
+- **修正4（PhaseDisplay）**: `PhaseManager.OnPhaseChanged`を購読 → 適切
+- **修正5（ResultScoreDisplay）**: `GameManager.OnGameOver`を購読 → 適切
+
+#### 2. 責務分離の確認
+- **ゲーム終了判定**: PhaseManagerが全フェーズ完了時に`GameManager.EndGame()`を呼ぶ（既存実装）
+- **TimerDisplay**: 表示専用に徹し、ゲーム終了判定は行わない（責務分離）
+- **NoteSpawner**: フェーズ情報をローカル保持し、PhaseManagerへの依存を最小化（疎結合）
+
+#### 3. メモリリーク防止
+- 全UIクラスで`OnDestroy()`にイベント購読解除を実装
+- StringBuilderの再利用でGC削減
+
+#### 4. タイトル復帰時のリセット
+- **修正3（TimerDisplay）**: `OnShowTitle`を購読してタイマーリセット
+- **修正5（ResultScoreDisplay）**: パネル非表示で自動的にリセット（追加処理不要）
+- **修正1（NoteSpawner）**: 既に`OnShowTitle`でスポーン停止（フェーズ情報もリセット不要、次回OnPhaseChangedで更新）
+
+#### 5. CodeArchitecture.md準拠
+- すべての修正が以下の設計原則に準拠：
+  - イベント駆動設計
+  - 責務の分離
+  - 疎結合
+  - パフォーマンス最適化（StringBuilder、ローカルキャッシュ）
+
+### 📝 設計上の重要な決定事項
+
+1. **修正1（休符表示）**: フェーズ情報をローカル保持する方式を採用
+   - 理由: 疎結合、パフォーマンス向上、既存イベント購読の活用
    
-2. **画像配列の設定**（Inspector上）
-   - **Note Sprites** 配列:
-     - [0] quarter_note.png（4分音符）
-     - [1] half_note.png（2分音符）
-     - [2] whole_note.png（全音符）
-   - **Rest Sprites** 配列:
-     - [0] quarter_rest.png（4分休符）
-     - [1] half_rest.png（2分休符）※存在しない場合はquarter_restで代用
-     - [2] whole_rest.png（全休符）
+2. **修正3（タイマー表示）**: ゲーム終了判定を行わない
+   - 理由: 責務分離、PhaseManagerが既に終了判定を実装済み
+   
+3. **全UIクラス**: StringBuilderを使用してGC削減
+   - 理由: ScoreDisplayとの一貫性、パフォーマンス最適化
 
-3. **対応関係の確認**
-   - 同じインデックスが音符と休符のペアになる
-   - 例：ID=0なら4分音符⇔4分休符
+### 🔍 潜在的な注意点
 
-#### 実装順序
-1. **SpriteManager.cs** を作成（IDベース画像管理）
-2. **Note.cs** を修正（`_spriteID`フィールド追加、`SetSpriteID()`と`UpdateSprite()`実装）
-3. **NoteSpawner.cs** の`SpawnOneNote()`でID設定を追加
-4. **Unity Editor**: SpriteManagerオブジェクト作成、Inspector上で画像配列を登録
-5. **動作確認**: 
-   - 音符の画像がバリエーション豊かに表示されること
-   - フェーズ切り替え時に音符⇔休符が正しく切り替わること
-
-#### 設計の利点
-- ✅ **フェーズ切り替え対応**: 既存の`PhaseManager.OnPhaseChanged`購読機能を維持
-- ✅ **音符⇔休符の対応**: 同じIDで対応する画像を取得可能
-- ✅ **バリエーション**: 複数種類の音符画像を使用可能
-- ✅ **共通スプライト実現**: SpriteManagerで一元管理、プリロード方式
-- ✅ **疎結合**: Note, NoteSpawnerはSpriteManager経由でのみ画像にアクセス
-- ✅ **後方互換性**: SpriteManagerがなくても従来の方式で動作
-- ✅ **パフォーマンス最適化**: 
-  - 画像参照をキャッシュ、フェーズ切り替え時はSpriteManagerへのアクセスなし
-  - フィールドアクセスのみ（1命令、約1 CPU cycle）
-  - 画像実体は共有、メモリ効率的（参照型の利点）
-
-#### 将来の拡張性
-- **ResourcesからのLoad**: `Resources.Load<Sprite>()`で動的ロードも可能
-- **ScriptableObject化**: 音符種類データをScriptableObjectで管理し、設定ファイル化も可能
-- **重み付けランダム**: 特定の音符種類を出やすくする機能追加可能
-
-#### テスト計画
-1. **単体テスト**: 
-   - `SpriteManager.GetRandomSpriteID()` が正しい範囲の値を返すこと
-   - `GetNoteSpriteByID()` / `GetRestSpriteByID()` が正しい画像を返すこと
-2. **統合テスト**: 
-   - 音符生成時に複数種類の画像が表示されること
-   - フェーズ切り替え時に音符⇔休符が正しく切り替わること（同じ種類のまま）
-3. **エッジケース**: 
-   - SpriteManagerがない場合でも従来の方式で動作すること
+1. **修正1**: `OnPhaseChanged()`内でフェーズ保存は**Coroutine開始前**に実行すること
+2. **修正3**: タイマーが0秒になる直前にPhaseManagerがゲームを終了するため、表示上の違和感はない
+3. **修正5**: リザルトパネルは`PanelController`が管理するため、ResultScoreDisplayは表示更新のみに集中
 
 ---
-
-2. タイマー表示(TMP)
-3. フェーズ表示(TMP)
-
-4. 休符モードの時に生成された音符が休符になっていない。
-
-5. 最終スコア表示の実装　(←プレイ中スコア表示の実装と重なる部分は大きいか？)
 
 ## 微小修正項目
 おそらく小さな変更で反映できる修正項目。後回し。
 
 - スライダは減っていくようにする。フェーズの種類によって色を変える。
-- 音符の生成範囲を画面内に自動でできるようにしたい。
+- 音符の生成範囲を画面内に。
 
 ## 足りない機能・検討項目
 
