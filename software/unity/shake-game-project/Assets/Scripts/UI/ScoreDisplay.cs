@@ -30,7 +30,7 @@ public class ScoreDisplay : MonoBehaviour
         // ScoreManager のイベントを購読
         if (ScoreManager.Instance != null)
         {
-            ScoreManager.Instance.OnScoreChanged.AddListener(OnScoreChanged);
+            ScoreManager.OnScoreChanged.AddListener(OnScoreChanged);
             
             // 初期表示
             OnScoreChanged(ScoreManager.Instance.GetScore());
@@ -66,9 +66,9 @@ public class ScoreDisplay : MonoBehaviour
     void OnDestroy()
     {
         // イベント購読解除
-        if (ScoreManager.Instance != null && ScoreManager.Instance.OnScoreChanged != null)
+        if (ScoreManager.OnScoreChanged != null)
         {
-            ScoreManager.Instance.OnScoreChanged.RemoveListener(OnScoreChanged);
+            ScoreManager.OnScoreChanged.RemoveListener(OnScoreChanged);
         }
     }
 }

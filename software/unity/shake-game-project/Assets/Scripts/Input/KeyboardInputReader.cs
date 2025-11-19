@@ -16,7 +16,8 @@ using UnityEngine.Events;
 /// </summary>
 public class KeyboardInputReader : MonoBehaviour, IInputSource
 {
-    public UnityEvent OnShakeDetected { get; private set; } = new UnityEvent();
+    private UnityEvent _onShakeDetected = new UnityEvent();
+    public UnityEvent OnShakeDetected => _onShakeDetected;
     
     [SerializeField] private KeyCode _shakeKey = KeyCode.Space;
     

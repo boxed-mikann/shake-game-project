@@ -19,7 +19,8 @@ using System.Collections.Concurrent;
 /// </summary>
 public class SerialInputReader : MonoBehaviour, IInputSource
 {
-    public UnityEvent OnShakeDetected { get; private set; } = new UnityEvent();
+    private UnityEvent _onShakeDetected = new UnityEvent();
+    public UnityEvent OnShakeDetected => _onShakeDetected;
     
     private ConcurrentQueue<string> _inputQueue = new ConcurrentQueue<string>();
     private Thread _readThread;

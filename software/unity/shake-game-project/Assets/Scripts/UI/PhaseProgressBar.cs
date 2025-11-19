@@ -28,7 +28,7 @@ public class PhaseProgressBar : MonoBehaviour
         // PhaseManager のイベントを購読
         if (PhaseManager.Instance != null)
         {
-            PhaseManager.Instance.OnPhaseChanged.AddListener(OnPhaseChanged);
+            PhaseManager.OnPhaseChanged.AddListener(OnPhaseChanged);
         }
         else
         {
@@ -93,9 +93,9 @@ public class PhaseProgressBar : MonoBehaviour
     void OnDestroy()
     {
         // イベント購読解除
-        if (PhaseManager.Instance != null && PhaseManager.Instance.OnPhaseChanged != null)
+        if (PhaseManager.OnPhaseChanged != null)
         {
-            PhaseManager.Instance.OnPhaseChanged.RemoveListener(OnPhaseChanged);
+            PhaseManager.OnPhaseChanged.RemoveListener(OnPhaseChanged);
         }
     }
 }

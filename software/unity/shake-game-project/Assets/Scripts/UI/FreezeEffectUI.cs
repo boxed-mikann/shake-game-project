@@ -27,7 +27,7 @@ public class FreezeEffectUI : MonoBehaviour
         // FreezeManager のイベントを購読
         if (FreezeManager.Instance != null)
         {
-            FreezeManager.Instance.OnFreezeChanged.AddListener(OnFreezeChanged);
+            FreezeManager.OnFreezeChanged.AddListener(OnFreezeChanged);
         }
         else
         {
@@ -62,9 +62,9 @@ public class FreezeEffectUI : MonoBehaviour
     void OnDestroy()
     {
         // イベント購読解除
-        if (FreezeManager.Instance != null && FreezeManager.Instance.OnFreezeChanged != null)
+        if (FreezeManager.OnFreezeChanged != null)
         {
-            FreezeManager.Instance.OnFreezeChanged.RemoveListener(OnFreezeChanged);
+            FreezeManager.OnFreezeChanged.RemoveListener(OnFreezeChanged);
         }
     }
 }

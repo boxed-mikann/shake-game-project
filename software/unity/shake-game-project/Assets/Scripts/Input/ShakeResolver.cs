@@ -51,7 +51,7 @@ public class ShakeResolver : MonoBehaviour
         // PhaseManager のフェーズ変更イベントを購読
         if (PhaseManager.Instance != null)
         {
-            PhaseManager.Instance.OnPhaseChanged.AddListener(OnPhaseChanged);
+            PhaseManager.OnPhaseChanged.AddListener(OnPhaseChanged);
         }
         else
         {
@@ -114,9 +114,9 @@ public class ShakeResolver : MonoBehaviour
     void OnDestroy()
     {
         // イベント購読解除
-        if (PhaseManager.Instance != null && PhaseManager.Instance.OnPhaseChanged != null)
+        if (PhaseManager.OnPhaseChanged != null)
         {
-            PhaseManager.Instance.OnPhaseChanged.RemoveListener(OnPhaseChanged);
+            PhaseManager.OnPhaseChanged.RemoveListener(OnPhaseChanged);
         }
         
         if (_inputSource != null && _inputSource.OnShakeDetected != null)

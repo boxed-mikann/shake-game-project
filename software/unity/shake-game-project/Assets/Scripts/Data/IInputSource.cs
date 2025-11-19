@@ -7,7 +7,7 @@ using UnityEngine.Events;
 public interface IInputSource
 {
     /// <summary>シェイク検出イベント</summary>
-    event UnityAction OnShakeDetected;
+    UnityEvent OnShakeDetected { get; }
     
     /// <summary>接続状態プロパティ</summary>
     bool IsConnected { get; }
@@ -17,7 +17,4 @@ public interface IInputSource
     
     /// <summary>接続切断メソッド</summary>
     void Disconnect();
-    
-    /// <summary>入力ポーリングメソッド（Update内で呼ばれる）</summary>
-    void Update();
 }
