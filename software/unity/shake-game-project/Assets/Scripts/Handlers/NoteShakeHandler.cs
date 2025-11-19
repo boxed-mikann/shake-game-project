@@ -10,6 +10,11 @@ public class NoteShakeHandler : MonoBehaviour, IShakeHandler
     
     public void HandleShake(string data, double timestamp)
     {
+        // 3. 効果音
+        if (AudioManager.Instance != null)
+            AudioManager.Instance.PlaySFX("hit");
+
+
         // 1. 最古Note取得
         if (NoteManager.Instance == null)
         {
@@ -27,11 +32,7 @@ public class NoteShakeHandler : MonoBehaviour, IShakeHandler
         
         // 2. 最古Note破棄
         NoteManager.Instance.DestroyOldestNote();
-        
-        // 3. 効果音
-        if (AudioManager.Instance != null)
-            AudioManager.Instance.PlaySFX("hit");
-        
+                
         // 4. スコア加算
         if (ScoreManager.Instance != null)
             ScoreManager.Instance.AddScore(_scoreValue);

@@ -21,7 +21,7 @@ public class ShakeResolver : MonoBehaviour
     {
         // DEBUG_MODEに応じて入力ソースを選択
         _activeInputSource = GameConstants.DEBUG_MODE 
-            ? (IInputSource)_keyboardInput 
+            ? (IInputSource)_serialInput 
             : _serialInput;
         
         if (GameConstants.DEBUG_MODE)
