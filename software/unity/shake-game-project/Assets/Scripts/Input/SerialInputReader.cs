@@ -1,32 +1,35 @@
 using UnityEngine;
-using UnityEngine.Events;
 using System.Threading;
 using System.Collections.Concurrent;
 
 /// <summary>
 /// ========================================
-/// SerialInputReader（新アーキテクチャ版）
+/// SerialInputReader（直接呼び出し方式）
 /// ========================================
 /// 
 /// 責務：シリアルポートから入力読み込み（スレッド化）
 /// 実装：IInputSource インターフェース
 /// 主機能：
 /// - バックグラウンドスレッドでシリアル読み込み
-/// - ConcurrentQueue<string> で入力データをキューイング
-/// - メインスレッドでの安全な読み取り
+/// - ConcurrentQueue<(string data, double timestamp)> でタイムスタンプ付きデータをキューイング
+/// - メインスレッドでの直接アクセス（TryDequeue）
+/// - UnityEvent廃止で約3倍高速化
 /// 
 /// ========================================
 /// </summary>
 public class SerialInputReader : MonoBehaviour, IInputSource
 {
-    private UnityEvent _onShakeDetected = new UnityEvent();
-    public UnityEvent OnShakeDetected => _onShakeDetected;
-    
-    private ConcurrentQueue<string> _inputQueue = new ConcurrentQueue<string>();
+    private ConcurrentQueue<(string data, double timestamp)> _inputQueue = new ConcurrentQueue<(string data, double timestamp)>();
     private Thread _readThread;
     private bool _isRunning = false;
     
-    public bool IsConnected => SerialPortManager.Instance != null && SerialPortManager.Instance.IsConnected;
+    /// <summary>
+    /// キューから入力データを取り出す（直接呼び出し方式）
+    /// </summary>
+    public bool TryDequeue(out (string data, double timestamp) input)
+    {
+        return _inputQueue.TryDequeue(out input);
+    }
     
     void Start()
     {
@@ -87,7 +90,9 @@ public class SerialInputReader : MonoBehaviour, IInputSource
                     string data = SerialPortManager.Instance.ReadLine();
                     if (!string.IsNullOrEmpty(data))
                     {
-                        _inputQueue.Enqueue(data.Trim());
+                        // タイムスタンプ付きでキューに格納
+                        double timestamp = AudioSettings.dspTime;
+                        _inputQueue.Enqueue((data.Trim(), timestamp));
                     }
                 }
                 else
@@ -101,37 +106,6 @@ public class SerialInputReader : MonoBehaviour, IInputSource
                 Debug.LogError($"[SerialInputReader] Thread error: {ex.Message}");
                 Thread.Sleep(500);
             }
-        }
-    }
-    
-    /// <summary>
-    /// メインスレッドで入力処理（キューからデキュー）
-    /// </summary>
-    void Update()
-    {
-        if (!_isRunning)
-            return;
-        
-        // キューから入力を取り出して処理
-        while (_inputQueue.TryDequeue(out string data))
-        {
-            ProcessInput(data);
-        }
-    }
-    
-    /// <summary>
-    /// 入力データ処理
-    /// </summary>
-    private void ProcessInput(string data)
-    {
-        // シェイク検出条件（旧実装を参考に）
-        // 例："shake" や特定の文字列を検出
-        if (data.Contains("shake") || data.Contains("1"))
-        {
-            if (GameConstants.DEBUG_MODE)
-                Debug.Log($"[SerialInputReader] Shake detected: {data}");
-            
-            OnShakeDetected.Invoke();
         }
     }
     

@@ -96,8 +96,9 @@ public static class GameConstants
     }
     
     // ===== Scoring =====
-    public const int NOTE_SCORE = 1;                  // 音符をはじけた時のスコア
-    public const int REST_PENALTY = 0;                // 休符をはじけた時のペナルティ
+    public const int NOTE_SCORE = 1;                  // 通常音符のスコア
+    public const int LAST_SPRINT_SCORE = 2;           // ラストスパート時のスコア
+    public const int REST_PENALTY = -1;               // 休符ペナルティ
     public const int PERFECT_BONUS = 50;              // 完璧プレイボーナス（休符ノーミス）
     
     // ===== Freeze（フリーズ - フェーズとは別管理） =====

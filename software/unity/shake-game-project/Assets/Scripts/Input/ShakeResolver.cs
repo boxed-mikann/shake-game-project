@@ -1,54 +1,36 @@
 using UnityEngine;
 
 /// <summary>
-/// ========================================
-/// ShakeResolver（新アーキテクチャ版）
-/// ========================================
-/// 
-/// 責務：入力ルーティング（Strategy パターン）
-/// 主機能：
-/// - 現在フェーズに応じて IShakeHandler 実装を切り替え
-/// - IInputSource からの入力を現在の Handler に振り分け
-/// 
-/// ========================================
+/// シェイク入力を現在のハンドラーに振り分け（直接呼び出し方式）
+/// Strategyパターン：フェーズ変更時にハンドラーを差し替え
 /// </summary>
 public class ShakeResolver : MonoBehaviour
 {
-    [Header("Input Source")]
-    [SerializeField] private MonoBehaviour _inputSourceComponent; // IInputSource を実装した MonoBehaviour
-    private IInputSource _inputSource;
+    [Header("Input Sources")]
+    [SerializeField] private SerialInputReader _serialInput;
+    [SerializeField] private KeyboardInputReader _keyboardInput;
     
-    [Header("Phase Handlers")]
-    [SerializeField] private Phase1ShakeHandler _phase1Handler;
-    [SerializeField] private Phase2ShakeHandler _phase2Handler;
-    [SerializeField] private Phase3ShakeHandler _phase3Handler;
-    [SerializeField] private Phase4ShakeHandler _phase4Handler;
-    [SerializeField] private Phase5ShakeHandler _phase5Handler;
-    [SerializeField] private Phase6ShakeHandler _phase6Handler;
-    [SerializeField] private Phase7ShakeHandler _phase7Handler;
+    [Header("Shake Handlers")]
+    [SerializeField] private NoteShakeHandler _noteHandler;  // 音符用
+    [SerializeField] private RestShakeHandler _restHandler;  // 休符用
     
     private IShakeHandler _currentHandler;
-    
-    void Awake()
-    {
-        // IInputSource の取得
-        if (_inputSourceComponent != null)
-        {
-            _inputSource = _inputSourceComponent as IInputSource;
-            if (_inputSource == null)
-            {
-                Debug.LogError("[ShakeResolver] Input source component does not implement IInputSource!");
-            }
-        }
-        else
-        {
-            Debug.LogError("[ShakeResolver] Input source component is not assigned!");
-        }
-    }
+    private IInputSource _activeInputSource;
     
     void Start()
     {
-        // PhaseManager のフェーズ変更イベントを購読
+        // DEBUG_MODEに応じて入力ソースを選択
+        _activeInputSource = GameConstants.DEBUG_MODE 
+            ? (IInputSource)_keyboardInput 
+            : _serialInput;
+        
+        if (GameConstants.DEBUG_MODE)
+            Debug.Log($"[ShakeResolver] Input source: {_activeInputSource.GetType().Name}");
+        
+        // 入力ソース接続
+        _activeInputSource?.Connect();
+        
+        // PhaseManager購読
         if (PhaseManager.Instance != null)
         {
             PhaseManager.OnPhaseChanged.AddListener(OnPhaseChanged);
@@ -57,71 +39,62 @@ public class ShakeResolver : MonoBehaviour
         {
             Debug.LogError("[ShakeResolver] PhaseManager instance not found!");
         }
-        
-        // 入力ソースのシェイク検出イベントを購読
-        if (_inputSource != null)
+    }
+    
+    void Update()
+    {
+        // ★ UnityEventを経由せず、直接キューから取り出して処理（最速）
+        if (_activeInputSource != null)
         {
-            _inputSource.OnShakeDetected.AddListener(OnInputDetected);
+            while (_activeInputSource.TryDequeue(out var input))
+            {
+                // ★ 直接ハンドラー呼び出し（分岐なし・最速）
+                _currentHandler?.HandleShake(input.data, input.timestamp);
+            }
         }
     }
     
     /// <summary>
-    /// フェーズ変更時のハンドラ切り替え
+    /// フェーズ変更時のハンドラー切り替え
     /// </summary>
     private void OnPhaseChanged(PhaseChangeData data)
     {
-        // phaseIndex に基づいて Handler を切り替え
-        _currentHandler = data.phaseIndex switch
+        // フェーズタイプに応じてハンドラーを差し替え
+        // ★ここで1回だけ切り替え、以後の入力処理では分岐不要
+        switch (data.phaseType)
         {
-            0 => _phase1Handler,
-            1 => _phase2Handler,
-            2 => _phase3Handler,
-            3 => _phase4Handler,
-            4 => _phase5Handler,
-            5 => _phase6Handler,
-            6 => _phase7Handler,
-            _ => throw new System.InvalidOperationException($"Invalid phase index: {data.phaseIndex}")
-        };
+            case Phase.NotePhase:
+                _currentHandler = _noteHandler;
+                _noteHandler.SetScoreValue(GameConstants.NOTE_SCORE);
+                break;
+                
+            case Phase.LastSprintPhase:
+                _currentHandler = _noteHandler;
+                _noteHandler.SetScoreValue(GameConstants.LAST_SPRINT_SCORE);
+                break;
+                
+            case Phase.RestPhase:
+                _currentHandler = _restHandler;
+                break;
+                
+            default:
+                Debug.LogWarning($"[ShakeResolver] Unknown phase type: {data.phaseType}");
+                break;
+        }
         
         if (GameConstants.DEBUG_MODE)
-            Debug.Log($"[ShakeResolver] Switched to Phase {data.phaseIndex + 1} Handler ({data.phaseType})");
-    }
-    
-    /// <summary>
-    /// 入力検出時のコールバック
-    /// </summary>
-    private void OnInputDetected()
-    {
-        // フリーズ中は入力無視
-        if (FreezeManager.Instance != null && FreezeManager.Instance.IsFrozen)
-        {
-            if (GameConstants.DEBUG_MODE)
-                Debug.Log("[ShakeResolver] Input ignored (Frozen)");
-            return;
-        }
-        
-        // 現在のハンドラで処理
-        if (_currentHandler != null)
-        {
-            _currentHandler.HandleShake();
-        }
-        else
-        {
-            Debug.LogWarning("[ShakeResolver] No handler assigned for current phase!");
-        }
+            Debug.Log($"[ShakeResolver] Handler switched to: {_currentHandler?.GetType().Name}");
     }
     
     void OnDestroy()
     {
+        // 入力ソース切断
+        _activeInputSource?.Disconnect();
+        
         // イベント購読解除
-        if (PhaseManager.OnPhaseChanged != null)
+        if (PhaseManager.Instance != null)
         {
             PhaseManager.OnPhaseChanged.RemoveListener(OnPhaseChanged);
-        }
-        
-        if (_inputSource != null && _inputSource.OnShakeDetected != null)
-        {
-            _inputSource.OnShakeDetected.RemoveListener(OnInputDetected);
         }
     }
 }

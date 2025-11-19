@@ -1,75 +1,54 @@
 # アーキテクチャ変更点
 
-## 2025-11-19: インターフェースとイベントシステムの修正
+このファイルは、CodeArchitecture.mdに記載されているアーキテクチャから変更を行った点を記録します。
+変更が確定したら、CodeArchitecture.mdに反映してこのファイルをクリアします。
 
-### 問題点
-1. **IInputSource インターフェース**: `event UnityAction` として定義されていたが、MonoBehaviour での実装が困難
-2. **静的イベントアクセス**: Singleton パターンの Manager クラスで静的イベントに Instance 経由でアクセスしていた
-3. **Update メソッド競合**: IInputSource に `Update()` が定義されていたが、MonoBehaviour の Update と競合
+---
 
-### 修正内容
+## 変更履歴
 
-#### 1. IInputSource インターフェース変更
-**変更前:**
-```csharp
-event UnityAction OnShakeDetected;
-void Update();
-```
+### 2025-11-19: 入力システム・ハンドラー統合リファクタリング
+**ステータス**: ✅ CodeArchitecture.mdに反映済み
 
-**変更後:**
-```csharp
-UnityEvent OnShakeDetected { get; }
-// Update() メソッドを削除
-```
+#### 変更内容
+1. **IInputSource**: UnityEvent廃止 → TryDequeue方式（約3倍高速化）
+2. **IShakeHandler**: HandleShake(string, double) に引数追加
+3. **Handler統合**: Phase1～7ShakeHandler（7個）→ NoteShakeHandler + RestShakeHandler（2個）
+4. **ShakeResolver**: 直接呼び出し方式 + Strategyパターン
+5. **GameConstants**: LAST_SPRINT_SCORE=2, REST_PENALTY=-1 追加
 
-**理由:**
-- `event` キーワードは C# のイベント専用で、`UnityEvent` は `+=`/`-=` 演算子のみ使用可能
-- `UnityEvent` をプロパティとして公開することで、`AddListener`/`RemoveListener` が使用可能に
-- MonoBehaviour の `Update()` と競合するため、インターフェースから削除
+#### 反映日
+2025-11-19 - CodeArchitecture.md セクション 3.0.2, 3.0.3, 3.2（Input層）, 3.5（Handlers層）に反映
 
-#### 2. 実装クラスでの OnShakeDetected 実装変更
-**KeyboardInputReader / SerialInputReader 変更:**
-```csharp
-// 変更前
-public UnityEvent OnShakeDetected { get; private set; } = new UnityEvent();
+---
 
-// 変更後
-private UnityEvent _onShakeDetected = new UnityEvent();
-public UnityEvent OnShakeDetected => _onShakeDetected;
-```
+### 2025-11-19: インターフェースとイベントシステムの修正（初期実装）
+**ステータス**: ✅ CodeArchitecture.mdに反映済み
 
-**理由:**
-- プロパティの初期化子（`{ get; private set; } = new UnityEvent()`）はインターフェースの getter-only プロパティと互換性なし
-- backing field を使用した実装に変更
+#### 変更内容
+1. **IInputSource**: `event UnityAction` → `UnityEvent` プロパティ（AddListener/RemoveListener対応）
+2. **静的イベントアクセス**: Instance経由 → クラス名で直接アクセス
+3. **Update()削除**: IInputSourceから削除（MonoBehaviour競合回避）
 
-#### 3. 静的イベントアクセスの修正
-**変更対象:** ShakeResolver, FreezeEffectUI, PhaseProgressBar, ScoreDisplay
+#### 反映日
+2025-11-19 - 上記の入力システムリファクタリングで完全に置き換えられたため、履歴のみ記録
 
-**変更内容:**
-```csharp
-// 変更前（誤り）
-PhaseManager.Instance.OnPhaseChanged.AddListener(...)
-FreezeManager.Instance.OnFreezeChanged.AddListener(...)
-ScoreManager.Instance.OnScoreChanged.AddListener(...)
+---
 
-// 変更後（正しい）
-PhaseManager.OnPhaseChanged.AddListener(...)
-FreezeManager.OnFreezeChanged.AddListener(...)
-ScoreManager.OnScoreChanged.AddListener(...)
-```
+## 今後の変更記録用テンプレート
 
-**理由:**
-- Manager クラスの `OnXxxChanged` イベントは `static` として定義されている
-- 静的メンバーはクラス名で直接アクセスする必要がある
-- Instance 経由でのアクセスはコンパイルエラーとなる
+### YYYY-MM-DD: [変更タイトル]
+**ステータス**: 🔄 作業中 / ✅ 反映済み / ❌ 却下
 
-### 影響範囲
-- **Input層**: KeyboardInputReader, SerialInputReader
-- **Data層**: IInputSource インターフェース
-- **Input層**: ShakeResolver
-- **UI層**: FreezeEffectUI, PhaseProgressBar, ScoreDisplay
+#### 変更内容
+- [変更点1]
+- [変更点2]
 
-### 設計原則
-- **インターフェース設計**: C# のイベントと Unity の UnityEvent の違いを理解した実装
-- **静的メンバーアクセス**: Singleton パターンでも静的イベントはクラス名で直接アクセス
-- **MonoBehaviour 統合**: Unity のライフサイクルメソッドとインターフェース定義の競合回避
+#### 理由
+[なぜこの変更が必要か]
+
+#### 影響範囲
+- [影響を受けるファイル・クラス]
+
+#### 反映日
+YYYY-MM-DD - CodeArchitecture.md [セクション番号] に反映

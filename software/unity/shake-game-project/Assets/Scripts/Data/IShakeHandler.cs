@@ -1,12 +1,14 @@
 /// <summary>
 /// フェーズごとのシェイク処理を定義するインターフェース
-/// Phase1ShakeHandler, Phase2ShakeHandler などが実装する
+/// NoteShakeHandler, RestShakeHandler が実装する
+/// 直接呼び出し方式で高速化
 /// </summary>
 public interface IShakeHandler
 {
     /// <summary>
     /// シェイク処理メソッド
-    /// 入力検出時に ShakeResolver から呼び出される
     /// </summary>
-    void HandleShake();
+    /// <param name="data">シェイクデータ（文字列）</param>
+    /// <param name="timestamp">AudioSettings.dspTime のタイムスタンプ</param>
+    void HandleShake(string data, double timestamp);
 }
