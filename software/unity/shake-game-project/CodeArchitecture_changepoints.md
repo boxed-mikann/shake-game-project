@@ -262,6 +262,99 @@
 ### 2025-11-19 19:25:04 HandleShake処理順序変更
 - ラグ感の低減を狙って、SE再生を音符破棄の前、最初に持ってきた
 
+---
+
+### 2025-11-19: 入力システム改善（統一キュー・2段階ハンドラー・ブロッキングReadLine）
+**ステータス**: ✅ CodeArchitecture.mdに反映済み
+
+#### 変更内容
+
+**1. 入力ソースの統一キュー化（修正1）**
+- **ShakeResolver.cs**: 統一入力キュー実装
+  - `_sharedInputQueue` (static ConcurrentQueue) 追加
+  - `EnqueueInput(string, double)` (static) 追加
+  - `_serialInput`, `_keyboardInput`, `_activeInputSource` フィールド削除
+  - DEBUG_MODEによる入力ソース切り替えロジック削除
+  - Update()を統一キューからの取り出しに変更
+- **SerialInputReader.cs**: IInputSource実装削除
+  - `IInputSource`インターフェース実装を削除
+  - `_inputQueue`フィールド削除
+  - `TryDequeue()`メソッド削除
+  - `Connect()`, `Disconnect()`メソッドを private に変更
+  - Start()で自動的にスレッド開始
+  - GameManagerイベント購読を削除
+  - ReadThreadLoop()で`ShakeResolver.EnqueueInput()`を呼び出し
+- **KeyboardInputReader.cs**: IInputSource実装削除・簡素化
+  - `IInputSource`インターフェース実装を削除
+  - `_inputQueue`, `_isListening`フィールド削除
+  - `TryDequeue()`, `Connect()`, `Disconnect()`メソッド削除
+  - Start(), OnDestroy()削除
+  - Update()で直接`ShakeResolver.EnqueueInput()`を呼び出し
+- **IInputSource.cs**: 削除（既に存在しない）
+
+**2. フリーズ処理の2段階ハンドラー切り替え（修正2）**
+- **NullShakeHandler.cs**: 新規作成
+  - フリーズ中用ハンドラー（何もしない）
+  - `HandleShake()`で入力を無視
+- **ShakeResolver.cs**: 2段階ハンドラー構造実装
+  - `_nullHandler` (NullShakeHandler) フィールド追加
+  - `_currentHandler` (最終ハンドラー) と `_activeHandler` (通常時ハンドラー) に役割分離
+  - `OnFreezeChanged(bool)` メソッド追加
+  - FreezeManager.OnFreezeChangedイベント購読
+  - フリーズ時: `_currentHandler = _nullHandler`
+  - 非フリーズ時: `_currentHandler = _activeHandler`
+  - OnPhaseChanged()で`_activeHandler`を更新し、非フリーズ時のみ`_currentHandler`に反映
+- **KeyboardInputReader.cs**: フリーズチェック削除
+  - Update()内のFreezeManager.IsFrozenチェックを削除
+
+**3. SerialPort.ReadLine()のブロッキング特性活用（修正3）**
+- **SerialPortManager.cs**: ブロッキング待機実装
+  - `ReadTimeout = SerialPort.InfiniteTimeout` に変更
+  - ReadLine()から`BytesToRead > 0`チェックを削除
+  - TimeoutException catch処理を削除
+- **SerialInputReader.cs**: ポーリング削除
+  - ReadThreadLoop()から`Thread.Sleep(100)`を削除（接続時）
+  - 未接続時のみ`Thread.Sleep(500)`で待機
+  - StopReadThread()でSerialPortManager.Disconnect()を先に呼び出し
+  - Join()タイムアウトを2000msに延長
+
+#### 理由
+- **統一キュー**: SerialとKeyboardの両方から同時入力を受け取れるように、コード簡潔化、DEBUG_MODE不要化
+- **2段階ハンドラー**: フリーズ中のフェーズ切り替えに対応、入力層とゲームロジックの疎結合化
+- **ブロッキングReadLine**: CPU使用率削減、入力レイテンシ劇的改善（最大200ms→0ms）
+
+#### 設計原則の準拠
+- **イベント駆動設計**: FreezeManager.OnFreezeChangedイベント購読
+- **責務分離**: 入力層は入力のみ、処理層がフリーズ判定
+- **Strategyパターン**: 2段階ハンドラー切り替え（フリーズ層/フェーズ層）
+- **疎結合**: staticメソッドによる統一キュー、イベント経由の通信
+
+#### パフォーマンス特性
+- **入力レイテンシ**: 最大200ms → 0ms（ReadTimeout 100ms + Thread.Sleep 100ms削除）
+- **CPU使用率**: ポーリング → ブロッキング待機（待機中はCPU 0%）
+- **メモリ効率**: キュー1つに統一（複数キュー削除）
+
+#### 影響範囲
+- ShakeResolver.cs: 大幅修正（統一キュー、2段階ハンドラー）
+- SerialInputReader.cs: 大幅修正（IInputSource削除、ブロッキング化）
+- KeyboardInputReader.cs: 大幅簡素化（IInputSource削除、フリーズチェック削除）
+- SerialPortManager.cs: ReadLine()修正（ブロッキング化）
+- NullShakeHandler.cs: 新規作成
+- IInputSource.cs: 削除
+
+#### 反映日
+2025-11-19 - CodeArchitecture.md 以下のセクションに反映完了：
+- セクション 2.1: 基本設計パターン（統一キュー・2段階ハンドラー・ブロッキングI/O追加）
+- セクション 2.2: 疎結合設計（統一キュー方式、2段階ハンドラー構造の図に更新）
+- セクション 3.2: SerialPortManager.cs（ブロッキングReadLine、パフォーマンス特性追加）
+- セクション 3.2: SerialInputReader.cs / KeyboardInputReader.cs（統一キュー方式、IInputSource廃止、パフォーマンス特性追加）
+- セクション 3.2: ShakeResolver.cs（統一キュー、2段階ハンドラー、フリーズ中のフェーズ切り替え対応、実装例更新）
+- セクション 3.5: NullShakeHandler.cs（新規追加）
+- セクション 3.5: RestShakeHandler.cs（フリーズチェック冗長性について備考追加）
+- セクション 4: フォルダ構成（NullShakeHandler.cs追加）
+
+---
+
 ## 今後の変更記録用テンプレート
 
 ### YYYY-MM-DD: [変更タイトル]

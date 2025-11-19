@@ -3053,8 +3053,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 5a2de6016eeb87b498600722dace8853, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  _serialInput: {fileID: 1938646285}
-  _keyboardInput: {fileID: 1938646286}
+  _nullHandler: {fileID: 0}
   _noteHandler: {fileID: 629021758}
   _restHandler: {fileID: 629021757}
 --- !u!114 &1938646284

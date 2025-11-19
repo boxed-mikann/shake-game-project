@@ -94,7 +94,7 @@ public class SerialPortManager : MonoBehaviour
             
             // SerialPort 初期化
             _serialPort = new SerialPort(GameConstants.SERIAL_PORT_NAME, GameConstants.SERIAL_BAUD_RATE);
-            _serialPort.ReadTimeout = 100;
+            _serialPort.ReadTimeout = SerialPort.InfiniteTimeout;  // ★ 変更：ブロッキング待機
             _serialPort.WriteTimeout = 100;
             _serialPort.Open();
             
@@ -140,6 +140,7 @@ public class SerialPortManager : MonoBehaviour
     
     /// <summary>
     /// ポートからデータ読み込み（1行）
+    /// ブロッキング動作：データが到着するまで待機
     /// </summary>
     public string ReadLine()
     {
@@ -148,14 +149,8 @@ public class SerialPortManager : MonoBehaviour
         
         try
         {
-            if (_serialPort.BytesToRead > 0)
-            {
-                return _serialPort.ReadLine();
-            }
-        }
-        catch (TimeoutException)
-        {
-            // タイムアウトは正常（データがない場合）
+            // ★ BytesToReadチェックを削除：ブロッキング待機
+            return _serialPort.ReadLine();
         }
         catch (Exception ex)
         {

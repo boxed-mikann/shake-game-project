@@ -1,54 +1,36 @@
 using UnityEngine;
 using System.Threading;
-using System.Collections.Concurrent;
 
 /// <summary>
 /// ========================================
-/// SerialInputReader（直接呼び出し方式）
+/// SerialInputReader（統一キュー方式）
 /// ========================================
 /// 
 /// 責務：シリアルポートから入力読み込み（スレッド化）
-/// 実装：IInputSource インターフェース
 /// 主機能：
 /// - バックグラウンドスレッドでシリアル読み込み
-/// - ConcurrentQueue<(string data, double timestamp)> でタイムスタンプ付きデータをキューイング
-/// - メインスレッドでの直接アクセス（TryDequeue）
-/// - UnityEvent廃止で約3倍高速化
+/// - ShakeResolver.EnqueueInput()で統一キューに追加
+/// - ブロッキングReadLine()でCPU使用率削減
 /// 
 /// ========================================
 /// </summary>
-public class SerialInputReader : MonoBehaviour, IInputSource
+public class SerialInputReader : MonoBehaviour
 {
-    private ConcurrentQueue<(string data, double timestamp)> _inputQueue = new ConcurrentQueue<(string data, double timestamp)>();
     private Thread _readThread;
     private bool _isRunning = false;
     
-    /// <summary>
-    /// キューから入力データを取り出す（直接呼び出し方式）
-    /// </summary>
-    public bool TryDequeue(out (string data, double timestamp) input)
-    {
-        return _inputQueue.TryDequeue(out input);
-    }
-    
     void Start()
     {
-        // GameManager.OnGameStart を購読して接続開始
-        GameManager.OnGameStart.AddListener(Connect);
-        GameManager.OnGameOver.AddListener(Disconnect);
+        // ゲーム開始時にスレッド開始
+        StartReadThread();
     }
     
     /// <summary>
     /// 入力読み込みスレッド開始
     /// </summary>
-    public void Connect()
+    private void StartReadThread()
     {
-        if (_isRunning)
-        {
-            if (GameConstants.DEBUG_MODE)
-                Debug.Log("[SerialInputReader] Already running");
-            return;
-        }
+        if (_isRunning) return;
         
         _isRunning = true;
         _readThread = new Thread(ReadThreadLoop);
@@ -62,22 +44,25 @@ public class SerialInputReader : MonoBehaviour, IInputSource
     /// <summary>
     /// 入力読み込みスレッド停止
     /// </summary>
-    public void Disconnect()
+    private void StopReadThread()
     {
         _isRunning = false;
         
-        if (_readThread != null && _readThread.IsAlive)
+        // ReadLine()のブロックを解除するためポート切断
+        if (SerialPortManager.Instance != null)
         {
-            _readThread.Join(1000); // 最大1秒待機
-            _readThread = null;
+            SerialPortManager.Instance.Disconnect();
         }
         
-        if (GameConstants.DEBUG_MODE)
-            Debug.Log("[SerialInputReader] Stopped reading thread");
+        if (_readThread != null && _readThread.IsAlive)
+        {
+            _readThread.Join(2000);  // 最大2秒待機
+        }
     }
     
     /// <summary>
     /// バックグラウンドスレッドでシリアル読み込み
+    /// ブロッキング動作：ReadLine()がデータ到着まで待機
     /// </summary>
     private void ReadThreadLoop()
     {
@@ -85,48 +70,41 @@ public class SerialInputReader : MonoBehaviour, IInputSource
         {
             try
             {
-                if (SerialPortManager.Instance != null && SerialPortManager.Instance.IsConnected)
+                // ★ 接続チェックを残すが、未接続時は待機
+                if (SerialPortManager.Instance == null || !SerialPortManager.Instance.IsConnected)
                 {
-                    string data = SerialPortManager.Instance.ReadLine();
-                    if (!string.IsNullOrEmpty(data))
-                    {
-                        // タイムスタンプ付きでキューに格納
-                        double timestamp = AudioSettings.dspTime;
-                        _inputQueue.Enqueue((data.Trim(), timestamp));
-                    }
+                    Thread.Sleep(500);  // 未接続時のみ待機
+                    continue;
                 }
-                else
+                
+                // ★ ブロッキング待機：データが来るまでここで待つ
+                string data = SerialPortManager.Instance.ReadLine();
+                if (!string.IsNullOrEmpty(data))
                 {
-                    // 接続待機
-                    Thread.Sleep(100);
+                    double timestamp = AudioSettings.dspTime;
+                    ShakeResolver.EnqueueInput(data.Trim(), timestamp);
                 }
             }
             catch (System.Exception ex)
             {
                 Debug.LogError($"[SerialInputReader] Thread error: {ex.Message}");
-                Thread.Sleep(500);
+                Thread.Sleep(500);  // エラー時のみ待機
             }
         }
     }
     
     void OnDestroy()
     {
-        Disconnect();
-        
-        // イベント購読解除
-        if (GameManager.OnGameStart != null)
-            GameManager.OnGameStart.RemoveListener(Connect);
-        if (GameManager.OnGameOver != null)
-            GameManager.OnGameOver.RemoveListener(Disconnect);
+        StopReadThread();
     }
     
     void OnDisable()
     {
-        Disconnect();
+        StopReadThread();
     }
     
     void OnApplicationQuit()
     {
-        Disconnect();
+        StopReadThread();
     }
 }

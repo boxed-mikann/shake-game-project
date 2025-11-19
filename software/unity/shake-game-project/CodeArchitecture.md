@@ -11,20 +11,27 @@
 ## 2. アーキテクチャ概観
 
 ### 2.1 基本設計パターン
-- **直接呼び出し最適化** - UnityEvent廃止、IInputSourceのキューに直接アクセスして約3倍高速化
-- **Strategy パターン** - フェーズごとに入力処理を動的に切り替え（NoteShakeHandler / RestShakeHandler）
+- **統一キュー方式** - Serial/Keyboardの両方から統一キューに入力、UnityEvent廃止で約3倍高速化
+- **2段階ハンドラー** - フリーズ層（NullShakeHandler）とフェーズ層（NoteShakeHandler/RestShakeHandler）で二重構造
+- **Strategy パターン** - フリーズ/フェーズごとにハンドラーを動的に切り替え
 - **Object Pool パターン** - 音符インスタンスの再利用で高速化
-- **依存性注入（簡易版）** - 必要な参照をコンストラクタ/SetterでInject
+- **ブロッキングI/O** - SerialPort.ReadLine()でCPU使用率削減、レイテンシ0ms化
 
 ### 2.2 疎結合設計
 ```
 [SerialInputReader / KeyboardInputReader]
-           ↓ (IInputSource)
-    [ShakeResolver] ← TryDequeue()で直接読み取り（UnityEvent不使用）
-           ↓ (IShakeHandler)
-   [NoteShakeHandler / RestShakeHandler]
+           ↓ (統一キュー: ShakeResolver.EnqueueInput)
+    [ShakeResolver] ← 統一キューから取り出し
+           ↓ (2段階ハンドラー構造)
+   [フリーズ層: _currentHandler]
+      → _nullHandler (フリーズ中)
+      → _activeHandler (通常時)
+           ↓
+   [フェーズ層: _activeHandler]
+      → NoteShakeHandler
+      → RestShakeHandler
 ```
-各層がインターフェースで疎結合。ShakeResolverは入力キューに直接アクセスして高速処理。
+統一キューで入力を一元管理。2段階ハンドラーでフリーズ/フェーズを独立制御。
 
 ---
 
@@ -220,63 +227,94 @@ public interface IShakeHandler {
   - ゲーム開始時にポート接続
   - 接続失敗時は指数バックオフで再接続試行
   - ゲーム終了時にポート切断
+  - **ブロッキングReadLine()** - データ到着まで待機（CPU使用率削減）
 - **実装詳細**：
   - 再接続間隔：1秒 → 2秒 → 4秒...（最大10秒等で制限）
+  - `ReadTimeout = SerialPort.InfiniteTimeout` - ブロッキング待機
+  - `ReadLine()` - BytesToReadチェックなし、直接ReadLine()呼び出し
   - OnDestroy/OnDisableで安全に終了
+- **パフォーマンス特性**：
+  - データ待機中はCPU 0%（ブロッキング）
+  - 入力レイテンシ: 0ms（データ到着即処理）
 
 #### SerialInputReader.cs / KeyboardInputReader.cs
-- **実装インターフェース**：`IInputSource`（直接呼び出し方式）
 - **共通仕様**：
-  - スレッド（またはUpdate）で入力を受け取り
-  - `ConcurrentQueue<(string data, double timestamp)>`に格納
-  - ShakeResolverから`TryDequeue()`で直接読み取り（UnityEvent不使用）
+  - 入力を受け取り、`ShakeResolver.EnqueueInput(data, timestamp)` で統一キューに追加
+  - IInputSourceインターフェースは**廃止**（統一キュー方式に変更）
+  - Serial/Keyboardの両方から同時に入力を受け取れる
 - **SerialInputReader**：
-  - SerialPortManagerから`SerialPort`参照を受け取り
-  - 別スレッドで`Port.ReadLine()`を実行
+  - SerialPortManagerから`ReadLine()`でデータ取得
+  - 別スレッドで**ブロッキング待機**（データが来るまで待つ）
+  - データ受信時: `ShakeResolver.EnqueueInput(data.Trim(), AudioSettings.dspTime)`
   - タイムスタンプは`AudioSettings.dspTime`（オーディオ同期用）
-  - `TryDequeue()`でキューから直接データを返す
+  - Start()で自動的にスレッド開始（GameManagerイベント不要）
+  - 未接続時のみThread.Sleep(500)で待機
 - **KeyboardInputReader**：
   - `Update()`で毎フレーム`Input.GetKeyDown(KeyCode.Space)`をチェック
-  - スペースキー等で"shake"を入力データとしてキューに詰める
-  - `TryDequeue()`でキューから直接データを返す
-  - テスト・デバッグ用途（GameConstants.DEBUG_MODEで切り替え可能）
+  - スペースキー押下時: `ShakeResolver.EnqueueInput("shake", AudioSettings.dspTime)`
+  - フリーズチェックなし（ShakeResolverが処理）
+  - テスト・デバッグ用途（常時有効）
+- **パフォーマンス特性**：
+  - Serial: ブロッキング待機でCPU使用率削減、入力レイテンシ0ms
+  - Keyboard: 毎フレームチェック（軽量、条件分岐1つ）
+  - 両方とも常に動作（DEBUG_MODEによる切り替え不要）
 
 #### ShakeResolver.cs
-- **責補**：受け取ったシェイクデータを現在のハンドラーに処理させる（直接呼び出し方式・Strategyパターン）
+- **責務**：受け取ったシェイクデータを現在のハンドラーに処理させる（統一キュー方式・2段階ハンドラー・Strategyパターン）
 - **機能**：
-  - `IInputSource`のキューから`TryDequeue()`で直接取り出し
-  - `IShakeHandler currentHandler`を呼び出す（分岐なし・最速）
-  - フェーズ変更イベントを購読して`currentHandler`を差し替え（Strategy パターン）
-  - タイトル復帰時に入力キューとハンドラーをリセット
+  - **統一入力キュー**: `_sharedInputQueue` (static ConcurrentQueue) で全入力を一元管理
+  - `EnqueueInput(string, double)` (static) - 外部から入力を追加
+  - **2段階ハンドラー構造**:
+    - `_currentHandler` - Update()で呼ばれる最終ハンドラー（フリーズ層）
+    - `_activeHandler` - 通常時のハンドラー（フェーズ層）
+  - フリーズ時: `_currentHandler = _nullHandler` （入力無視）
+  - 非フリーズ時: `_currentHandler = _activeHandler` （フェーズに応じた処理）
+  - フェーズ変更イベントを購読して`_activeHandler`を差し替え（Strategy パターン）
+  - タイトル復帰時に入力キューをクリア
 - **パフォーマンス最適化**：
-  - フェーズ変更時（数秒に1回）にハンドラーを差し替え
-  - シェイク処理時（秒間数十回）は分岐なしで`currentHandler.HandleShake()`を呼ぶだけ
+  - フリーズ変更時（数秒に1回）: `_currentHandler`を切り替え
+  - フェーズ変更時（数秒に1回）: `_activeHandler`を切り替え
+  - シェイク処理時（秒間数十回）: 分岐なしで`_currentHandler.HandleShake()`を呼ぶだけ
   - UnityEvent経由なし、約3倍高速化（30 cycles → 10 cycles）
 - **重要メソッド**：
-  - `ResetResolver()` - 入力キューをクリア、ハンドラーをリセット
+  - `EnqueueInput(string, double)` (static) - 外部から統一キューに入力を追加
+  - `OnFreezeChanged(bool)` - フリーズ層のハンドラー切り替え
+  - `OnPhaseChanged(PhaseChangeData)` - フェーズ層のハンドラー切り替え
+  - `ResetResolver()` - 統一キューをクリア
 - **イベント購読**：
-  - `PhaseManager.OnPhaseChanged`を購読
-  - `phaseData.phaseType`に応じて対応するハンドラーを`currentHandler`に割り当て
-  - 以後の入力は自動的に新しいハンドラーで処理
-  - `GameManager.OnShowTitle` → 入力キューとハンドラーをリセット
-- **入力ソース切り替え**：
-  - `GameConstants.DEBUG_MODE`に応じてKeyboardInputReaderまたはSerialInputReaderを自動選択
-  - Inspector設定不要（実行時に自動切り替え）
+  - `FreezeManager.OnFreezeChanged` → `_currentHandler`を`_nullHandler`/`_activeHandler`に切り替え
+  - `PhaseManager.OnPhaseChanged` → `_activeHandler`を差し替え（非フリーズ時のみ`_currentHandler`に反映）
+  - `GameManager.OnShowTitle` → 統一キューをクリア
+- **入力ソース統一**：
+  - SerialInputReaderとKeyboardInputReaderの両方から同時に受け取れる
+  - DEBUG_MODEによる切り替え不要（常に両方有効）
+- **フリーズ中のフェーズ切り替え対応**：
+  - フリーズ中にフェーズが変わっても`_activeHandler`のみ更新
+  - フリーズ解除時に自動的に正しいフェーズハンドラーで処理再開
 - **実装例**：
   ```csharp
+  // 統一入力キュー（static）
+  private static ConcurrentQueue<(string data, double timestamp)> _sharedInputQueue 
+      = new ConcurrentQueue<(string data, double timestamp)>();
+  
+  public static void EnqueueInput(string data, double timestamp) {
+      _sharedInputQueue.Enqueue((data, timestamp));
+  }
+  
   void Update() {
-      // ★ UnityEventを経由せず、直接キューから取り出して処理（最速）
-      if (_activeInputSource != null) {
-          while (_activeInputSource.TryDequeue(out var input)) {
-              // ★ 直接ハンドラー呼び出し（分岐なし・最速）
-              _currentHandler?.HandleShake(input.data, input.timestamp);
-          }
+      // ★ 統一キューから取り出して処理
+      while (_sharedInputQueue.TryDequeue(out var input)) {
+          _currentHandler?.HandleShake(input.data, input.timestamp);
       }
   }
   
+  void OnFreezeChanged(bool isFrozen) {
+      // フリーズ層の切り替え
+      _currentHandler = isFrozen ? _nullHandler : _activeHandler;
+  }
+  
   void OnPhaseChanged(PhaseChangeData data) {
-      // フェーズタイプに応じてハンドラーを差し替え
-      // ★ここで1回だけ切り替え、以後の入力処理では分岐不要
+      // フェーズ層の切り替え（_activeHandlerを変更）
       switch (data.phaseType) {
           case Phase.NotePhase:
               _currentHandler = _noteHandler;
@@ -460,11 +498,24 @@ public interface IShakeHandler {
 }
 ```
 
+#### NullShakeHandler.cs
+- **実装**：`IShakeHandler`
+- **責務**：フリーズ中用ハンドラー（何もしない）
+- **主処理**：
+  - 入力を完全に無視（フリーズ中の入力を処理しない）
+  - DEBUG_MODEで無視ログ出力
+- **用途**：
+  - ShakeResolverの`_currentHandler`がフリーズ時にこのハンドラーに切り替わる
+  - フリーズ中のフェーズ切り替えに対応
+- **備考**：
+  - 2段階ハンドラー構造のフリーズ層を担当
+
 #### NoteShakeHandler.cs / RestShakeHandler.cs（2種類に統合）
 **設計変更（2025-11-19）**：
-- 従来の7個のPhase*ShakeHandlerを2種類に統合（71%削減）
+- 従来の7個のPhase*ShakeHandlerを2種類（+NullShakeHandler）に統合
 - 処理パターンは実質2種類のみ：音符モード（NotePhase, LastSprintPhase）と休符モード（RestPhase）
 - フェーズタイプで分岐するのではなく、Strategyパターンでハンドラーを差し替え
+- フリーズ処理は2段階ハンドラー構造で実現
 
 #### NoteShakeHandler.cs
 - **実装**：`IShakeHandler`
@@ -484,7 +535,7 @@ public interface IShakeHandler {
 
 #### RestShakeHandler.cs
 - **実装**：`IShakeHandler`
-- **責補**：休符フェーズのシェイク処理（RestPhase）
+- **責務**：休符フェーズのシェイク処理（RestPhase）
 - **主処理**：
   1. `FreezeManager.IsFrozen`チェック（フリーズ中なら何もしない）
   2. `FreezeManager.StartFreeze(GameConstants.INPUT_LOCK_DURATION)` - フリーズ開始
@@ -493,6 +544,7 @@ public interface IShakeHandler {
 - **備考**：
   - フリーズ状態でなければフリーズ開始
   - ペナルティスコアはGameConstants.REST_PENALTYで定義（-1）
+  - **フリーズチェックは冗長**：ShakeResolverの2段階ハンドラー構造により、フリーズ中はこのハンドラーが呼ばれない（念のため残している）
 
 **統合による改善効果**：
 - クラス数：7個 → 2個（-71%）
@@ -611,6 +663,7 @@ Assets/
 │   │   └── Note.cs
 │   │
 │   ├── Handlers/
+│   │   ├── NullShakeHandler.cs      ※ フリーズ中用ハンドラー（入力無視）
 │   │   ├── NoteShakeHandler.cs      ※ ノートフェーズ用ハンドラー
 │   │   └── RestShakeHandler.cs      ※ 休符フェーズ用ハンドラー
 │   │
