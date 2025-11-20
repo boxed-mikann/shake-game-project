@@ -101,6 +101,9 @@ public static class GameConstants
     public const int REST_PENALTY = -1;               // 休符ペナルティ
     public const int PERFECT_BONUS = 50;              // 完璧プレイボーナス（休符ノーミス）
     
+    // ===== High Score =====
+    public const string HIGH_SCORE_KEY = "HighScore"; // PlayerPrefs用のハイスコアキー
+    
     // ===== Freeze（フリーズ - フェーズとは別管理） =====
     /// <summary>
     /// 入力ロック時間（秒）
@@ -117,6 +120,9 @@ public static class GameConstants
     /// 0.9f = 画面サイズの90%以内に生成
     /// </summary>
     public const float NOTE_SPAWN_MARGIN = 0.9f;
+    
+    // ===== Effects =====
+    public const int EFFECT_POOL_INITIAL_SIZE = 50;     // エフェクトプールの初期サイズ
     
     // ===== Debug =====
     public const bool DEBUG_MODE = true;                // デバッグモード（キーボード入力有効化）

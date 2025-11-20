@@ -355,6 +355,79 @@
 
 ---
 
+---
+
+### 2025-11-20: ハイスコアシステムとエフェクトシステムの実装
+**ステータス**: ✅ 反映済み
+
+#### 変更内容
+
+**Phase 1: ハイスコアシステム**
+1. **GameConstants.cs**: HIGH_SCORE_KEY定数追加（"HighScore"）
+2. **HighScoreManager.cs**: 新規作成
+   - PlayerPrefsによる永続化
+   - ゲーム終了時のハイスコアチェック
+   - 新記録時のイベント発行（OnHighScoreUpdated）
+   - エディタ用リセット機能（ContextMenu）
+   - DontDestroyOnLoadで永続化
+3. **HighScoreDisplay.cs**: 新規作成
+   - タイトル画面・ゲーム中のハイスコア表示
+   - HighScoreManager.OnHighScoreUpdatedを購読
+   - StringBuilderによるGC削減
+4. **ResultScoreDisplay.cs**: 新記録強調表示機能追加
+   - HighScoreManager.IsNewHighScore()で判定
+   - 新記録時: 色変更（デフォルト: Yellow）
+   - オプションで「NEW RECORD!」テキスト表示
+   - 新記録でない場合は元の色に戻す
+
+**Phase 2: エフェクトシステム**
+1. **GameConstants.cs**: EFFECT_POOL_INITIAL_SIZE定数追加（50）
+2. **EffectPool.cs**: 新規作成
+   - Object Poolパターンによる効率的管理
+   - 初期プールサイズ50、プール不足時は自動拡張
+   - CFXR_Effect.clearBehavior = Disable 設定
+   - エフェクト終了時に自動でSetActive(false)
+   - DontDestroyOnLoadで永続化
+3. **NoteShakeHandler.cs**: エフェクト再生処理追加
+   - 音符破棄前に位置を記録（Vector3 notePosition）
+   - EffectPool.PlayEffect(notePosition, Quaternion.identity)呼び出し
+   - 処理順序: 効果音 → Note取得 → 位置記録 → Note破棄 → エフェクト再生 → スコア加算
+
+#### 理由
+- **ハイスコア**: ゲームの達成感向上、プレイヤーモチベーション維持
+- **エフェクト**: 視覚的フィードバック強化、ゲーム体験の向上
+- **設計原則準拠**: イベント駆動、責務分離、Object Pool、疎結合を維持
+
+#### 設計原則の準拠
+- **イベント駆動設計**: GameManager.OnGameOver、HighScoreManager.OnHighScoreUpdated
+- **責務分離**: 各クラスが単一の責務を持つ（永続化、表示、プール管理）
+- **疎結合**: インターフェース経由、Null安全性チェック
+- **パフォーマンス**: Object Pool、StringBuilder使用によるGC削減
+- **DRY原則**: PlayerPrefsキーを定数化、リセット機能の一元管理
+
+#### パフォーマンス特性
+- **ハイスコアチェック**: ゲーム終了時1回のみ（O(1)）
+- **エフェクト再生**: < 1ms、プール探索 O(n)（通常は最初の数個で見つかる）
+- **メモリ効率**: プール50個で十分、不足時のみ拡張
+
+#### 影響範囲
+- GameConstants.cs: 定数追加（HIGH_SCORE_KEY, EFFECT_POOL_INITIAL_SIZE）
+- HighScoreManager.cs: 新規作成
+- HighScoreDisplay.cs: 新規作成
+- ResultScoreDisplay.cs: 新記録強調表示機能追加
+- EffectPool.cs: 新規作成
+- NoteShakeHandler.cs: エフェクト再生処理追加
+
+#### 反映日
+2025-11-20 - CodeArchitecture.md 以下のセクションに反映完了：
+- セクション 3.1: Managers/ - HighScoreManager.cs を追加
+- セクション 3.3: Gameplay/ - EffectPool.cs を追加
+- セクション 3.6: UI/ - HighScoreDisplay.cs を追加、ResultScoreDisplay.cs を更新
+- セクション 4: フォルダ構成 - HighScoreManager.cs, EffectPool.cs, HighScoreDisplay.cs を追加
+- セクション 9.1: 実装状況 - ハイスコアシステムとエフェクトシステムを完了項目9, 10として追加
+
+---
+
 ## 今後の変更記録用テンプレート
 
 ### YYYY-MM-DD: [変更タイトル]

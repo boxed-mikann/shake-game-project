@@ -10,12 +10,11 @@ public class NoteShakeHandler : MonoBehaviour, IShakeHandler
     
     public void HandleShake(string data, double timestamp)
     {
-        // 3. 効果音
+        // 1. 効果音
         if (AudioManager.Instance != null)
             AudioManager.Instance.PlaySFX("hit");
 
-
-        // 1. 最古Note取得
+        // 2. 最古Note取得
         if (NoteManager.Instance == null)
         {
             Debug.LogWarning("[NoteShakeHandler] NoteManager instance not found!");
@@ -30,15 +29,22 @@ public class NoteShakeHandler : MonoBehaviour, IShakeHandler
             return;
         }
         
-        // 2. 最古Note破棄
+        // 3. 位置を記録（破棄前に取得）
+        Vector3 notePosition = oldest.transform.position;
+        
+        // 4. 最古Note破棄
         NoteManager.Instance.DestroyOldestNote();
-                
-        // 4. スコア加算
+        
+        // 5. エフェクト再生
+        if (EffectPool.Instance != null)
+            EffectPool.Instance.PlayEffect(notePosition, Quaternion.identity);
+        
+        // 6. スコア加算
         if (ScoreManager.Instance != null)
             ScoreManager.Instance.AddScore(_scoreValue);
         
         if (GameConstants.DEBUG_MODE)
-            Debug.Log($"[NoteShakeHandler] Note destroyed, score +{_scoreValue}");
+            Debug.Log($"[NoteShakeHandler] Note destroyed with effect, score +{_scoreValue}");
     }
     
     /// <summary>

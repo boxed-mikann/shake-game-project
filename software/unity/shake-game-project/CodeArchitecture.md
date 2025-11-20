@@ -217,6 +217,28 @@ public interface IShakeHandler {
   - Note が ID に基づいて画像参照をキャッシュ
   - フェーズ切り替え時は同じIDで音符⇔休符が自動変更
 
+#### HighScoreManager.cs
+- **責務**：ハイスコアの保存・読み込み・更新
+- **機能**：
+  - PlayerPrefsによる永続化
+  - ゲーム終了時のハイスコアチェック
+  - 新記録時のイベント発行
+  - エディタ用のリセット機能
+- **実装方式**：シングルトン + staticなUnityEvent<int>
+- **重要メソッド**：
+  - `CheckAndUpdateHighScore()` - ゲーム終了時のハイスコアチェック
+  - `GetHighScore()` - 現在のハイスコア取得
+  - `IsNewHighScore(int score)` - 新記録かどうか判定
+  - `ResetHighScore()` - エディタ専用リセット機能（ContextMenu）
+- **イベント購読**：
+  - `GameManager.OnGameOver` → ハイスコアチェック
+- **イベント発行**：
+  - `public static UnityEvent<int> OnHighScoreUpdated;` - 新記録時
+- **備考**：
+  - PlayerPrefsキー: `GameConstants.HIGH_SCORE_KEY`
+  - DontDestroyOnLoadで永続化
+  - HighScoreDisplay がこのイベントを購読
+
 ---
 
 ### 3.2 Input/
@@ -628,12 +650,34 @@ public interface IShakeHandler {
 - **責補**：リザルトパネルに最終スコア表示
 - **機能**：
   - `GameManager.OnGameOver`を購読
-  - `ScoreManager.Instance.GetScore()`で最終スコアを取得
+  - `ScoreManager`から最終スコアを取得して表示
+  - 新記録時の強調表示（色変更、追加テキスト）
   - TextMeshProで表示（例: "Final Score: 150"）
 - **最適化**：
   - `StringBuilder`を再利用してGC削減
 - **Inspector設定**：
   - `_prefix`: 表示プレフィックス（デフォルト: "Final Score: "）
+  - `_highlightColor`: 新記録時の色（デフォルト: Yellow）
+  - `_newRecordText`: 「NEW RECORD!」テキスト（オプション）
+- **重要メソッド**：
+  - `ShowNewRecordEffect()` - 新記録時の強調表示
+- **備考**：
+  - HighScoreManager.IsNewHighScore()で新記録判定
+  - 新記録でない場合は元の色に戻す
+
+#### HighScoreDisplay.cs
+- **責補**：タイトル画面・ゲーム中のハイスコア表示
+- **機能**：
+  - ハイスコアをTextMeshProに表示
+  - 新記録時の自動更新
+  - `StringBuilder`によるGC削減
+- **イベント購読**：
+  - `HighScoreManager.OnHighScoreUpdated` → 表示更新
+- **Inspector設定**：
+  - `_highScoreText`: TextMeshProUGUIコンポーネント
+  - `_prefix`: 表示プレフィックス（デフォルト: "High Score: "）
+- **備考**：
+  - Start()時にHighScoreManager.GetHighScore()で初期表示
 
 ---
 
@@ -647,7 +691,8 @@ Assets/
 │   │   ├── PhaseManager.cs
 │   │   ├── FreezeManager.cs
 │   │   ├── ScoreManager.cs
-│   │   └── SpriteManager.cs          ※ 音符・休符画像の共通管理
+│   │   ├── SpriteManager.cs          ※ 音符・休符画像の共通管理
+│   │   └── HighScoreManager.cs       ※ ハイスコアの永続化管理
 │   │
 │   ├── Input/
 │   │   ├── IInputSource.cs
@@ -660,7 +705,8 @@ Assets/
 │   │   ├── NotePool.cs
 │   │   ├── NoteManager.cs
 │   │   ├── NoteSpawner.cs
-│   │   └── Note.cs
+│   │   ├── Note.cs
+│   │   └── EffectPool.cs             ※ エフェクトのObject Pool管理
 │   │
 │   ├── Handlers/
 │   │   ├── NullShakeHandler.cs      ※ フリーズ中用ハンドラー（入力無視）
@@ -677,7 +723,8 @@ Assets/
 │   │   ├── FreezeEffectUI.cs
 │   │   ├── TimerDisplay.cs           ※ ゲーム全体のタイマー表示
 │   │   ├── PhaseDisplay.cs           ※ 現在フェーズ名の表示
-│   │   └── ResultScoreDisplay.cs     ※ リザルトパネルの最終スコア表示
+│   │   ├── ResultScoreDisplay.cs     ※ リザルトパネルの最終スコア表示（新記録強調）
+│   │   └── HighScoreDisplay.cs       ※ タイトル/ゲーム中のハイスコア表示
 │   │
 │   └── Data/
 │       ├── GameConstants.cs
@@ -852,6 +899,21 @@ Assets/
    - GameConstants.cs: NOTE_SPAWN_MARGIN定数追加
    - OnEnable()時に範囲計算（ゲームスタート時のカメラ状態を参照）
    - Inspector設定による調整の柔軟性を確保
+
+9. **ハイスコアシステム** - PlayerPrefsによる永続化とUI表示（2025-11-20）
+   - GameConstants.cs: HIGH_SCORE_KEY定数追加（"HighScore"）
+   - HighScoreManager.cs: 新規作成（PlayerPrefs管理、イベント発行、エディタ用リセット機能）
+   - HighScoreDisplay.cs: 新規作成（タイトル/ゲーム中のハイスコア表示）
+   - ResultScoreDisplay.cs: 新記録時の強調表示機能追加（色変更、追加テキスト）
+   - イベント駆動設計による疎結合を維持
+   - DontDestroyOnLoadで永続化
+
+10. **エフェクトシステム** - Object Poolによる音符破棄エフェクト（2025-11-20）
+   - GameConstants.cs: EFFECT_POOL_INITIAL_SIZE定数追加（50）
+   - EffectPool.cs: 新規作成（Object Pool管理、CFXR_Effect自動Disable活用）
+   - NoteShakeHandler.cs: エフェクト再生処理追加（音符破棄前に位置記録）
+   - パフォーマンス: 再生コスト < 1ms、プール不足時は自動拡張
+   - 推奨Prefab: CFXR Magic Poof（clearBehavior = Disable必須）
 
 ### 9.2 今後の開発方針
 - このドキュメントをAI参照用の正確な設計書として維持

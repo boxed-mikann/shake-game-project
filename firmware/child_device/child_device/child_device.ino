@@ -13,9 +13,8 @@ uint8_t parentMAC[] = {0x08, 0x3A, 0xF2, 0x52, 0x9E, 0x54};
 
 // ★ ジャーク検知用のパラメータ
 float previousAccel = 0;
-const float JERK_THRESHOLD = 20000.0;      // ジャーク（加速度の変化率）の閾値
-const int DEBOUNCE_TIME = 0;            // デバウンス時間（ms）
-unsigned long lastShakeTime = 0;
+const float JERK_THRESHOLD = 10000.0;      // ジャーク（加速度の変化率）の閾値
+const int DEBOUNCE_DELAY = 0;            // デバウンス用のdelay時間（ms）
 bool initialized = false;                 // ★ 初期化フラグ
 
 // ★ 親機からのコマンドを受信
@@ -77,8 +76,9 @@ void setup() {
   Serial.println("=== Jerk-based Shake Detection ===");
   Serial.print("JERK_THRESHOLD: ");
   Serial.println(JERK_THRESHOLD);
-  Serial.print("DEBOUNCE_TIME: ");
-  Serial.println(DEBOUNCE_TIME);
+  Serial.print("DEBOUNCE_DELAY: ");
+  Serial.print(DEBOUNCE_DELAY);
+  Serial.println(" ms");
   
   Wire.beginTransmission(MPU_addr);
   Wire.write(0x6B);
@@ -144,33 +144,32 @@ void loop() {
     
     // ジャーク検知 + デバウンス
     if (jerk > JERK_THRESHOLD && !isShaking) {
-      // ★ デバウンス時間をチェック（0の場合はスキップ）
-      if (DEBOUNCE_TIME == 0 || millis() - lastShakeTime > DEBOUNCE_TIME) {
-        isShaking = true;
-        shakeCount++;
-        lastShakeTime = millis();
-        
-        // ★ LEDを点灯
-        digitalWrite(LED_PIN, HIGH);
-        
-        shakeData.childID = CHILD_ID;
-        shakeData.shakeCount = shakeCount;
-        shakeData.acceleration = currentAccel;
-        
-        esp_now_send(parentMAC, (uint8_t *) &shakeData, sizeof(shakeData));
-        
-        Serial.print(">>> SHAKE! ID: ");
-        Serial.print(CHILD_ID);
-        Serial.print(" | Count: ");
-        Serial.print(shakeCount);
-        Serial.print(" | Jerk: ");
-        Serial.println(jerk);
-      }
+      isShaking = true;
+      shakeCount++;
+      
+      // ★ LEDを点灯
+      digitalWrite(LED_PIN, HIGH);
+      
+      shakeData.childID = CHILD_ID;
+      shakeData.shakeCount = shakeCount;
+      shakeData.acceleration = currentAccel;
+      
+      esp_now_send(parentMAC, (uint8_t *) &shakeData, sizeof(shakeData));
+      
+      Serial.print(">>> SHAKE! ID: ");
+      Serial.print(CHILD_ID);
+      Serial.print(" | Count: ");
+      Serial.print(shakeCount);
+      Serial.print(" | Jerk: ");
+      Serial.println(jerk);
+      
+      // ★ デバウンス用のdelay
+      delay(DEBOUNCE_DELAY);
     }
     
     // ★ 改善版リセット条件：加速度が低下したら検知完了状態に戻す
     // CSVデータから、フリフリ後は加速度が30000未満に戻る
-    if (isShaking && currentAccel < 30000.0) {
+    if (isShaking && jerk < 0) {
       isShaking = false;
       // ★ LEDを消灯
       digitalWrite(LED_PIN, LOW);

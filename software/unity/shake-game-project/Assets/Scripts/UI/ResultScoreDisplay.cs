@@ -24,12 +24,25 @@ public class ResultScoreDisplay : MonoBehaviour
     [Header("Display Settings")]
     [SerializeField] private string _prefix = "Final Score: ";
     
+    [Header("New Record Display")]
+    [SerializeField] private Color _highlightColor = Color.yellow;
+    [SerializeField] private TextMeshProUGUI _newRecordText;  // オプション
+    
     private StringBuilder _stringBuilder = new StringBuilder();
+    private Color _originalColor;
     
     void Start()
     {
         // GameManager のイベントを購読
         GameManager.OnGameOver.AddListener(OnGameOver);
+        
+        // 元の色を保存
+        if (_finalScoreText != null)
+            _originalColor = _finalScoreText.color;
+        
+        // 新記録テキストを初期非表示
+        if (_newRecordText != null)
+            _newRecordText.gameObject.SetActive(false);
     }
     
     /// <summary>
@@ -57,8 +70,37 @@ public class ResultScoreDisplay : MonoBehaviour
         _stringBuilder.Append(finalScore);
         _finalScoreText.text = _stringBuilder.ToString();
         
+        // 新記録チェック
+        if (HighScoreManager.Instance != null && HighScoreManager.Instance.IsNewHighScore(finalScore))
+        {
+            ShowNewRecordEffect();
+        }
+        else
+        {
+            // 新記録でない場合は元の色に戻す
+            if (_finalScoreText != null)
+                _finalScoreText.color = _originalColor;
+        }
+        
         if (GameConstants.DEBUG_MODE)
             Debug.Log($"[ResultScoreDisplay] Final score displayed: {finalScore}");
+    }
+    
+    /// <summary>
+    /// 新記録時の強調表示
+    /// </summary>
+    private void ShowNewRecordEffect()
+    {
+        // 色変更
+        if (_highlightColor != Color.clear && _finalScoreText != null)
+            _finalScoreText.color = _highlightColor;
+        
+        // 追加テキスト表示（オプション）
+        if (_newRecordText != null)
+            _newRecordText.gameObject.SetActive(true);
+        
+        if (GameConstants.DEBUG_MODE)
+            Debug.Log("[ResultScoreDisplay] New record displayed!");
     }
     
     void OnDestroy()
