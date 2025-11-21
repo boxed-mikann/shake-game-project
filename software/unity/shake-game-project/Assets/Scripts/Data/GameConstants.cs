@@ -81,10 +81,10 @@ public static class GameConstants
     
     // ===== Game Settings =====
     /// <summary>初期湧き出し数 (/秒)</summary>
-    public const int SPAWN_RATE_BASE = 5;
+    public const int SPAWN_RATE_BASE = 3;
     
     /// <summary>ラストスパント時の倍率（湧き出し × 2）</summary>
-    public const float LAST_SPRINT_MULTIPLIER = 2f;
+    public const float LAST_SPRINT_MULTIPLIER = 3f;
     
     /// <summary>
     /// 基本音符湧き出し頻度（秒間隔）
@@ -112,7 +112,7 @@ public static class GameConstants
     public const float INPUT_LOCK_DURATION = 3f;
     
     // ===== Visuals =====
-    public const int MAX_NOTE_COUNT = 100;              // 同時生成上限の音符数
+    public const int MAX_NOTE_COUNT = 30;              // 同時生成上限の音符数
     public const float NOTE_ROTATION_MAX = 30f;         // 生成時の回転範囲（±度）
     
     /// <summary>

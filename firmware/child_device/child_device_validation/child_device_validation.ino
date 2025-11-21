@@ -28,6 +28,8 @@ const float JERK_THRESHOLD = 10000.0;      // ジャーク（加速度の変化�
 const int DEBOUNCE_DELAY = 0;            // デバウンス用のdelay時間（ms）
 const int32_t DOT_PRODUCT_THRESHOLD = 0;  // 内積が0以下→振り戻し判定
 
+// ★ フレームカウンター
+uint32_t frameCount = 0;
 
 // ★ 親機からのコマンドを受信
 typedef struct {
@@ -36,15 +38,6 @@ typedef struct {
 
 // ★ フリフリ計測のON/OFF フラグ
 bool shakeMeasurementEnabled = true;
-
-typedef struct {
-  int childID;
-  int shakeCount;
-  float acceleration;
-} ShakeData;
-
-ShakeData shakeData;
-esp_now_peer_info_t peerInfo;
 
 // ★ 検証用データ構造体 - 全データを毎フレーム送信
 typedef struct {
@@ -60,7 +53,7 @@ typedef struct {
 } ValidationData;
 
 ValidationData validationData;
-uint32_t frameCount = 0;
+esp_now_peer_info_t peerInfo;
 
 // ★ MPU-6050スリープ制御関数
 void mpu6050Sleep() {
@@ -138,12 +131,7 @@ void setup() {
   Serial.print(CHILD_ID);
   Serial.print(" MAC Address: ");
   Serial.println(WiFi.macAddress());
-  Serial.println("=== Jerk-based Shake Detection ===");
-  Serial.print("JERK_THRESHOLD: ");
-  Serial.println(JERK_THRESHOLD);
-  Serial.print("DEBOUNCE_DELAY: ");
-  Serial.print(DEBOUNCE_DELAY);
-  Serial.println(" ms");
+  Serial.println("=== Validation Mode: Sending all frame data ===");
 #endif
   
   Wire.beginTransmission(MPU_addr);
@@ -225,12 +213,6 @@ void loop() {
     // ★ LEDを点灯
     digitalWrite(LED_PIN, HIGH);
     
-    shakeData.childID = CHILD_ID;
-    shakeData.shakeCount = shakeCount;
-    shakeData.acceleration = currentAccel;
-    
-    esp_now_send(parentMAC, (uint8_t *) &shakeData, sizeof(shakeData));
-    
 #ifdef DEBUG
     Serial.print(">>> SHAKE! ID: ");
     Serial.print(CHILD_ID);
@@ -255,12 +237,6 @@ void loop() {
                         (int32_t)baseVecY * currentDeltaY +
                         (int32_t)baseVecZ * currentDeltaZ;
     
-#ifdef DEBUG
-    // Serial.print("Dot: "); Serial.print(dotProduct);
-    // Serial.print(" | BaseVec: ("); Serial.print(baseVecX); Serial.print(","); Serial.print(baseVecY); Serial.print(","); Serial.print(baseVecZ); Serial.print(")");
-    // Serial.print(" | CurrentDelta: ("); Serial.print(currentDeltaX); Serial.print(","); Serial.print(currentDeltaY); Serial.print(","); Serial.print(currentDeltaZ); Serial.println(")");
-#endif
-    
     // 内積が負またはゼロ付近→振り戻し判定
     if (dotProduct <= DOT_PRODUCT_THRESHOLD) {
       isShaking = false;
@@ -279,25 +255,12 @@ void loop() {
   prevAcZ = AcZ;
   
   // ★★ ここから検証用データ送信（毎フレーム） ★★
-  // ★ 毎フレーム内積を計算（シェイク判定に実際に使われている値）
-  int32_t currentDotProduct = 0;
-  if (isShaking) {
-    // シェイク状態中：実際の振り戻し判定に使われている内積を計算
-    int16_t currentDeltaX = ((int16_t)(AcX - prevAcX)) >> VECTOR_SHIFT;
-    int16_t currentDeltaY = ((int16_t)(AcY - prevAcY)) >> VECTOR_SHIFT;
-    int16_t currentDeltaZ = ((int16_t)(AcZ - prevAcZ)) >> VECTOR_SHIFT;
-    currentDotProduct = (int32_t)baseVecX * currentDeltaX +
-                        (int32_t)baseVecY * currentDeltaY +
-                        (int32_t)baseVecZ * currentDeltaZ;
-  }
-  
   validationData.frameCount = frameCount++;
   validationData.acX = AcX;
   validationData.acY = AcY;
   validationData.acZ = AcZ;
   validationData.totalAccel = currentAccel;
   validationData.jerk = jerk;
-  validationData.dotProduct = currentDotProduct;
   validationData.shakeCount = shakeCount;
   validationData.isShaking = isShaking ? 1 : 0;
   validationData.baseVecX = baseVecX;
@@ -305,8 +268,20 @@ void loop() {
   validationData.baseVecZ = baseVecZ;
   validationData.childID = CHILD_ID;
   
-  // ESP-NOW で親機に送信
+  // 内積の計算（シェイク状態時のみ有効）
+  if (isShaking) {
+    int16_t currentDeltaX = ((int16_t)(AcX - prevAcX)) >> VECTOR_SHIFT;
+    int16_t currentDeltaY = ((int16_t)(AcY - prevAcY)) >> VECTOR_SHIFT;
+    int16_t currentDeltaZ = ((int16_t)(AcZ - prevAcZ)) >> VECTOR_SHIFT;
+    validationData.dotProduct = (int32_t)baseVecX * currentDeltaX +
+                                (int32_t)baseVecY * currentDeltaY +
+                                (int32_t)baseVecZ * currentDeltaZ;
+  } else {
+    validationData.dotProduct = 0;
+  }
+  
+  // ESP-NOWで送信
   esp_now_send(parentMAC, (uint8_t *) &validationData, sizeof(validationData));
   
-  delay(50);
+  delay(50);  // 20FPS
 }
