@@ -22,11 +22,13 @@ const int VECTOR_SHIFT = 2;  // 右シフト量（÷4、精度±4）
 // ★ ジャーク検知用のパラメータ
 float previousAccel = 0;
 bool initialized = false;                 // ★ 初期化フラグ
+unsigned long lastShakeTime = 0;
 
 // ★ 調整用パラメータ
-const float JERK_THRESHOLD = 10000.0;      // ジャーク（加速度の変化率）の閾値
-const int DEBOUNCE_DELAY = 0;            // デバウンス用のdelay時間（ms）
-const int32_t DOT_PRODUCT_THRESHOLD = 0;  // 内積が0以下→振り戻し判定
+const float JERK_THRESHOLD = 17000.0;      // ジャーク（加速度の変化率）の閾値
+const int DEBOUNCE_DELAY = 0;            // デバウンス用のdelay時間（ms） 検知後待機する
+const int DURATON_TIME = 400;             //一定時間(ms)経過後shake状態を解除する
+const int32_t DOT_PRODUCT_THRESHOLD = -50000;  // 内積が0以下→振り戻し判定
 
 // ★ フレームカウンター
 uint32_t frameCount = 0;
@@ -204,6 +206,7 @@ void loop() {
   if (jerk > JERK_THRESHOLD && !isShaking) {
     isShaking = true;
     shakeCount++;
+    lastShakeTime = millis();
     
     // ★ シェイク開始時に基準ベクトルを保存（保存時から右シフト）
     baseVecX = ((int16_t)(AcX - prevAcX)) >> VECTOR_SHIFT;
@@ -238,7 +241,7 @@ void loop() {
                         (int32_t)baseVecZ * currentDeltaZ;
     
     // 内積が負またはゼロ付近→振り戻し判定
-    if (dotProduct <= DOT_PRODUCT_THRESHOLD) {
+    if (dotProduct <= DOT_PRODUCT_THRESHOLD || millis() - lastShakeTime > DURATON_TIME) {
       isShaking = false;
       // ★ LEDを消灯
       digitalWrite(LED_PIN, LOW);
@@ -247,12 +250,6 @@ void loop() {
 #endif
     }
   }
-  
-  // ★ 前フレームの加速度を保存（enabledのみ）
-  previousAccel = currentAccel;
-  prevAcX = AcX;
-  prevAcY = AcY;
-  prevAcZ = AcZ;
   
   // ★★ ここから検証用データ送信（毎フレーム） ★★
   validationData.frameCount = frameCount++;
@@ -268,20 +265,24 @@ void loop() {
   validationData.baseVecZ = baseVecZ;
   validationData.childID = CHILD_ID;
   
-  // 内積の計算（シェイク状態時のみ有効）
-  if (isShaking) {
-    int16_t currentDeltaX = ((int16_t)(AcX - prevAcX)) >> VECTOR_SHIFT;
-    int16_t currentDeltaY = ((int16_t)(AcY - prevAcY)) >> VECTOR_SHIFT;
-    int16_t currentDeltaZ = ((int16_t)(AcZ - prevAcZ)) >> VECTOR_SHIFT;
-    validationData.dotProduct = (int32_t)baseVecX * currentDeltaX +
-                                (int32_t)baseVecY * currentDeltaY +
-                                (int32_t)baseVecZ * currentDeltaZ;
-  } else {
-    validationData.dotProduct = 0;
-  }
+  // 内積の計算（常に計算して状況を可視化）
+  // ★ prevAcX更新前に計算することで、正しい差分を得る
+  int16_t currentDeltaX = ((int16_t)(AcX - prevAcX)) >> VECTOR_SHIFT;
+  int16_t currentDeltaY = ((int16_t)(AcY - prevAcY)) >> VECTOR_SHIFT;
+  int16_t currentDeltaZ = ((int16_t)(AcZ - prevAcZ)) >> VECTOR_SHIFT;
+  
+  validationData.dotProduct = (int32_t)baseVecX * currentDeltaX +
+                              (int32_t)baseVecY * currentDeltaY +
+                              (int32_t)baseVecZ * currentDeltaZ;
   
   // ESP-NOWで送信
   esp_now_send(parentMAC, (uint8_t *) &validationData, sizeof(validationData));
+  
+  // ★ 前フレームの加速度を保存（送信後に更新！）
+  previousAccel = currentAccel;
+  prevAcX = AcX;
+  prevAcY = AcY;
+  prevAcZ = AcZ;
   
   delay(50);  // 20FPS
 }

@@ -45,8 +45,8 @@ public class NoteManager : MonoBehaviour
         }
         _instance = this;
         
-        if (GameConstants.DEBUG_MODE)
-            Debug.Log("[NoteManager] Initialized");
+        // if (GameConstants.DEBUG_MODE)
+        //     Debug.Log("[NoteManager] Initialized");
     }
     
     private void OnEnable()
@@ -77,8 +77,8 @@ public class NoteManager : MonoBehaviour
         
         _activeNotes.Enqueue(note);
         
-        if (GameConstants.DEBUG_MODE)
-            Debug.Log($"[NoteManager] Note added (Active: {_activeNotes.Count})");
+        // if (GameConstants.DEBUG_MODE)
+        //     Debug.Log($"[NoteManager] Note added (Active: {_activeNotes.Count})");
     }
     
     /// <summary>
@@ -103,8 +103,8 @@ public class NoteManager : MonoBehaviour
     {
         if (_activeNotes.Count == 0)
         {
-            if (GameConstants.DEBUG_MODE)
-                Debug.Log("[NoteManager] No notes to destroy");
+            // if (GameConstants.DEBUG_MODE)
+            //     Debug.Log("[NoteManager] No notes to destroy");
             return;
         }
         
@@ -117,8 +117,8 @@ public class NoteManager : MonoBehaviour
             return;
         }
         
-        if (GameConstants.DEBUG_MODE)
-            Debug.Log($"[NoteManager] Note destroyed (Remaining: {_activeNotes.Count})");
+        // if (GameConstants.DEBUG_MODE)
+        //     Debug.Log($"[NoteManager] Note destroyed (Remaining: {_activeNotes.Count})");
         
         // プールに返却
         if (NotePool.Instance != null)
@@ -145,8 +145,8 @@ public class NoteManager : MonoBehaviour
     /// </summary>
     private void ClearAllNotes()
     {
-        if (GameConstants.DEBUG_MODE)
-            Debug.Log($"[NoteManager] Clearing all notes ({_activeNotes.Count})");
+        // if (GameConstants.DEBUG_MODE)
+        //     Debug.Log($"[NoteManager] Clearing all notes ({_activeNotes.Count})");
         
         // すべての Note をプールに返却
         while (_activeNotes.Count > 0)

@@ -68,8 +68,8 @@ public class NoteSpawner : MonoBehaviour
             spawnContainer.SetParent(transform);
         }
         
-        if (GameConstants.DEBUG_MODE)
-            Debug.Log("[NoteSpawner] Initialized");
+        // if (GameConstants.DEBUG_MODE)
+        //     Debug.Log("[NoteSpawner] Initialized");
     }
     
     /// <summary>
@@ -93,11 +93,11 @@ public class NoteSpawner : MonoBehaviour
         _calculatedRangeX = new Vector2(-cameraWidth * margin, cameraWidth * margin);
         _calculatedRangeY = new Vector2(-cameraHeight * margin, cameraHeight * margin);
         
-        if (GameConstants.DEBUG_MODE)
-        {
-            Debug.Log($"[NoteSpawner] Calculated spawn range - X: {_calculatedRangeX}, Y: {_calculatedRangeY}");
-            Debug.Log($"[NoteSpawner] Camera size - Width: {cameraWidth}, Height: {cameraHeight}, Aspect: {_mainCamera.aspect}");
-        }
+        // if (GameConstants.DEBUG_MODE)
+        // {
+        //     Debug.Log($"[NoteSpawner] Calculated spawn range - X: {_calculatedRangeX}, Y: {_calculatedRangeY}");
+        //     Debug.Log($"[NoteSpawner] Camera size - Width: {cameraWidth}, Height: {cameraHeight}, Aspect: {_mainCamera.aspect}");
+        // }
     }
     
     private void OnEnable()
@@ -108,10 +108,10 @@ public class NoteSpawner : MonoBehaviour
         {
             CalculateSpawnRange();
         }
-        else
-        {
-            Debug.LogWarning("[NoteSpawner] Main camera not found, using fallback spawn range");
-        }
+        // else
+        // {
+        //     Debug.LogWarning("[NoteSpawner] Main camera not found, using fallback spawn range");
+        // }
         
         // PhaseManager.OnPhaseChanged を購読
         PhaseManager.OnPhaseChanged.AddListener(OnPhaseChanged);
@@ -136,8 +136,8 @@ public class NoteSpawner : MonoBehaviour
             _spawnCoroutine = null;
         }
         
-        if (GameConstants.DEBUG_MODE)
-            Debug.Log("[NoteSpawner] Spawning stopped");
+        // if (GameConstants.DEBUG_MODE)
+        //     Debug.Log("[NoteSpawner] Spawning stopped");
     }
     
     /// <summary>
@@ -154,8 +154,8 @@ public class NoteSpawner : MonoBehaviour
             _spawnCoroutine = null;
         }
         
-        if (GameConstants.DEBUG_MODE)
-            Debug.Log($"[NoteSpawner] Phase changed: {phaseData.phaseType}, Frequency: {phaseData.spawnFrequency}s");
+        // if (GameConstants.DEBUG_MODE)
+        //     Debug.Log($"[NoteSpawner] Phase changed: {phaseData.phaseType}, Frequency: {phaseData.spawnFrequency}s");
         
         // 新しいフェーズのスポーンループ開始
         _spawnCoroutine = StartCoroutine(SpawnLoop(phaseData.spawnFrequency, phaseData.duration));
@@ -174,8 +174,8 @@ public class NoteSpawner : MonoBehaviour
             if (NoteManager.Instance != null && 
                 NoteManager.Instance.GetActiveNoteCount() >= GameConstants.MAX_NOTE_COUNT)
             {
-                if (GameConstants.DEBUG_MODE)
-                    Debug.Log("[NoteSpawner] Max note count reached, skipping spawn");
+                // if (GameConstants.DEBUG_MODE)
+                //     Debug.Log("[NoteSpawner] Max note count reached, skipping spawn");
                 
                 yield return new WaitForSeconds(frequency);
                 elapsed += frequency;
@@ -190,8 +190,8 @@ public class NoteSpawner : MonoBehaviour
             elapsed += frequency;
         }
         
-        if (GameConstants.DEBUG_MODE)
-            Debug.Log("[NoteSpawner] Spawn loop completed");
+        // if (GameConstants.DEBUG_MODE)
+        //     Debug.Log("[NoteSpawner] Spawn loop completed");
     }
     
     /// <summary>
@@ -239,8 +239,8 @@ public class NoteSpawner : MonoBehaviour
             int randomID = SpriteManager.Instance.GetRandomSpriteID();
             note.SetSpriteID(randomID);
             
-            if (GameConstants.DEBUG_MODE)
-                Debug.Log($"[NoteSpawner] Spawned note with sprite ID: {randomID}");
+            // if (GameConstants.DEBUG_MODE)
+            //     Debug.Log($"[NoteSpawner] Spawned note with sprite ID: {randomID}");
         }
         
         // 現在のフェーズを設定（生成時に正しい画像を表示）
@@ -259,8 +259,8 @@ public class NoteSpawner : MonoBehaviour
             NoteManager.Instance.AddNote(note);
         }
         
-        if (GameConstants.DEBUG_MODE)
-            Debug.Log($"[NoteSpawner] 🎵 Note spawned at {randomPos}, rotation: {randomRotation}°");
+        // if (GameConstants.DEBUG_MODE)
+        //     Debug.Log($"[NoteSpawner] 🎵 Note spawned at {randomPos}, rotation: {randomRotation}°");
     }
     
     /// <summary>

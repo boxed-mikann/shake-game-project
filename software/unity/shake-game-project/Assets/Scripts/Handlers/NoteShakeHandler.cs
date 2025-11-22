@@ -45,6 +45,9 @@ public class NoteShakeHandler : MonoBehaviour, IShakeHandler
         
         if (GameConstants.DEBUG_MODE)
             Debug.Log($"[NoteShakeHandler] Note destroyed with effect, score +{_scoreValue}");
+            double lag_time = AudioSettings.dspTime - timestamp;
+            Debug.Log($"[NoteShakeHandler] lag = {lag_time}");
+
     }
     
     /// <summary>

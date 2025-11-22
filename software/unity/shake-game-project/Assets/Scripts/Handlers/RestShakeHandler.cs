@@ -36,5 +36,7 @@ public class RestShakeHandler : MonoBehaviour, IShakeHandler
         
         if (GameConstants.DEBUG_MODE)
             Debug.Log("[RestShakeHandler] Freeze started, score penalty applied");
+            double lag_time = AudioSettings.dspTime - timestamp;
+            Debug.Log($"[NoteShakeHandler] lag = {lag_time}");
     }
 }
