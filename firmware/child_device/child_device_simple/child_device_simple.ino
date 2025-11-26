@@ -15,7 +15,7 @@ bool isShaking = false;
 uint8_t parentMAC[] = {0x08, 0x3A, 0xF2, 0x52, 0x9E, 0x54};
 
 // ★ ベクトル内積判定用（シェイク状態時のみ使用）
-//int16_t prevAcX = 0, prevAcY = 0, prevAcZ = 0;  // 前フレーム加速度
+int16_t prevAcX = 0, prevAcY = 0, prevAcZ = 0;  // 前フレーム加速度
 //int16_t baseVecX = 0, baseVecY = 0, baseVecZ = 0;  // シェイク開始時の基準差分ベクトル（既に右シフト済み）
 //const int VECTOR_SHIFT = 2;  // 右シフト量（÷4、精度±4）
 
@@ -26,11 +26,16 @@ unsigned long lastShakeTime = 0;
 float baseAccel = 0;
 
 // ★ 調整用パラメータ
-const float JERK_THRESHOLD = 10000.0;      // ジャーク（加速度の変化率）の閾値
+// シェイク検知
+const float JERK_THRESHOLD = 17000.0;      // ジャーク（加速度の変化率）の閾値
 const int DEBOUNCE_DELAY = 0;            // デバウンス用のdelay時間（ms）
-const int DURATON_TIME = 400;             //一定時間(ms)経過後shake状態を解除する
 //const int32_t DOT_PRODUCT_THRESHOLD = 0;  // 内積が0以下→振り戻し判定
+const float ACCEL_THRESHOULD = 40000;
 
+// シェイク状態解除検知
+const int DURATON_TIME = 400;             //一定時間(ms)経過後shake状態を解除する
+const float BACK_JERK_THRESHOULD = -11000;
+const float BACK_ACCEL_THRESHOULD = 16000;
 
 // ★ 親機からのコマンドを受信
 typedef struct {
@@ -154,6 +159,11 @@ void setup() {
   Wire.write(0x6B);
   Wire.write(0);
   Wire.endTransmission(true);
+    // ★ MPU-6050 加速度レンジ 初期化
+  Wire.beginTransmission(MPU_addr);
+  Wire.write(0x1C);
+  Wire.write(0x00);// ±2g //0x18); // +/- 16G
+  Wire.endTransmission(true);
   
   if (esp_now_init() != ESP_OK) {
 #ifdef DEBUG
@@ -202,6 +212,8 @@ void loop() {
   float currentAccel = sqrt(pow((long)AcX, 2) +
                             pow((long)AcY, 2) +
                             pow((long)AcZ, 2));
+  Serial.print("Accel: ");
+  Serial.println(currentAccel);
   
   // ★ 初期化時の誤検知を防ぐ
   if (!initialized) {
@@ -217,7 +229,7 @@ void loop() {
   float jerk = currentAccel - previousAccel;
   
   // ジャーク検知 + デバウンス
-  if ((jerk > JERK_THRESHOLD || currentAccel > 40000) && !isShaking) {
+  if ((jerk > JERK_THRESHOLD || currentAccel > ACCEL_THRESHOULD) && !isShaking) {
     isShaking = true;
     shakeCount++;
     lastShakeTime = millis();
@@ -266,14 +278,14 @@ void loop() {
     // Serial.print(" | CurrentDelta: ("); Serial.print(currentDeltaX); Serial.print(","); Serial.print(currentDeltaY); Serial.print(","); Serial.print(currentDeltaZ); Serial.println(")");
 #endif
     
-    // 内積が負またはゼロ付近→振り戻し判定
-    if (currentAccel <= 16000 || millis() - lastShakeTime > DURATON_TIME || jerk <= -11000) {//dotProduct <= DOT_PRODUCT_THRESHOLD) {
+    // 振り戻し判定
+    if (currentAccel <= BACK_ACCEL_THRESHOULD || millis() - lastShakeTime > DURATON_TIME || jerk <= BACK_JERK_THRESHOULD) {//dotProduct <= DOT_PRODUCT_THRESHOLD) {
       isShaking = false;
       // ★ LEDを消灯
       digitalWrite(LED_PIN, LOW);
-#ifdef DEBUG
-      Serial.print(">>> Reset shake state | Dot: "); Serial.println(dotProduct);
-#endif
+// #ifdef DEBUG
+//       Serial.print(">>> Reset shake state | Dot: "); Serial.println(dotProduct);
+// #endif
     }
   }
   

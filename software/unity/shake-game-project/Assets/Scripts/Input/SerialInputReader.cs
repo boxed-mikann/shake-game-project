@@ -82,9 +82,9 @@ public class SerialInputReader : MonoBehaviour
                 if (!string.IsNullOrEmpty(data))
                 {
                     double timestamp = AudioSettings.dspTime;
-                    for (int i = 1; i <= 10; i++){
-                        ShakeResolver.EnqueueInput(data.Trim(), timestamp);
-                    }
+                    //for (int i = 1; i <= 10; i++){
+                    ShakeResolver.EnqueueInput(data.Trim(), timestamp);
+                    //}
                 }
             }
             catch (System.Exception ex)
