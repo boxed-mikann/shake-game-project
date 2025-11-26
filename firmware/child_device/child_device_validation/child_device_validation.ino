@@ -24,8 +24,15 @@ float previousAccel = 0;
 bool initialized = false;                 // ★ 初期化フラグ
 unsigned long lastShakeTime = 0;
 
-// ★ 調整用パラメータ
-const float JERK_THRESHOLD = 17000.0;      // ジャーク（加速度の変化率）の閾値
+// ===== 加速度センサー設定 =====
+// ACCEL_RANGE: 0x00=±2g, 0x08=±4g, 0x10=±8g, 0x18=±16g
+#define ACCEL_RANGE 0x18         // デフォルト: ±16g
+#define ACCEL_SCALE (ACCEL_RANGE == 0x00 ? 1.0 : \
+                     ACCEL_RANGE == 0x08 ? 2.0 : \
+                     ACCEL_RANGE == 0x10 ? 4.0 : 8.0)
+
+// ★ 調整用パラメータ（±2g基準値 / ACCEL_SCALE で自動調整）
+const float JERK_THRESHOLD = 17000.0 / ACCEL_SCALE;      // ジャーク（加速度の変化率）の閾値
 const int DEBOUNCE_DELAY = 0;            // デバウンス用のdelay時間（ms） 検知後待機する
 const int DURATON_TIME = 400;             //一定時間(ms)経過後shake状態を解除する
 const int32_t DOT_PRODUCT_THRESHOLD = -50000;  // 内積が0以下→振り戻し判定
@@ -141,6 +148,12 @@ void setup() {
   Wire.write(0);
   Wire.endTransmission(true);
   
+  // ★ MPU-6050 加速度レンジ 初期化
+  Wire.beginTransmission(MPU_addr);
+  Wire.write(0x1C);
+  Wire.write(ACCEL_RANGE);  // 設定マクロを使用
+  Wire.endTransmission(true);
+  
   if (esp_now_init() != ESP_OK) {
 #ifdef DEBUG
     Serial.println("ESP-NOW init failed");
@@ -163,6 +176,11 @@ void setup() {
   }
   
 #ifdef DEBUG
+  Serial.print("Accel Range: ±");
+  Serial.print((int)(ACCEL_SCALE * 2));
+  Serial.println("g");
+  Serial.print("JERK_THRESHOLD (scaled): ");
+  Serial.println(JERK_THRESHOLD);
   Serial.print("ESP-NOW Child #");
   Serial.print(CHILD_ID);
   Serial.println(" Ready!");

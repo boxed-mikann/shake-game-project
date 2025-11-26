@@ -32,17 +32,24 @@ unsigned long lastShakeTime = 0;
 bool initialized = false;
 float baseAccel = 0;
 
-// ★ 調整用パラメータ--閾値
+// ===== 加速度センサー設定 =====
+// ACCEL_RANGE: 0x00=±2g, 0x08=±4g, 0x10=±8g, 0x18=±16g
+#define ACCEL_RANGE 0x18         // デフォルト: ±16g
+#define ACCEL_SCALE (ACCEL_RANGE == 0x00 ? 1.0 : \
+                     ACCEL_RANGE == 0x08 ? 2.0 : \
+                     ACCEL_RANGE == 0x10 ? 4.0 : 8.0)
+
+// ★ 調整用パラメータ--閾値（±2g基準値 / ACCEL_SCALE で自動調整）
 //振ったと認識
 //const int32_t DOT_PRODUCT_THRESHOLD = 0;  // 内積が0以下→振り戻し判定
-const float JERK_THRESHOLD = 10000.0;      // ジャーク（加速度の変化率）の閾値
+const float JERK_THRESHOLD = 10000.0 / ACCEL_SCALE;      // ジャーク（加速度の変化率）の閾値
 const int DEBOUNCE_DELAY = 0;               // デバウンス時間（ms）
-const float ACCEL_THRESHOULD = 40000;
+const float ACCEL_THRESHOULD = 40000.0 / ACCEL_SCALE;
 
 // 振り終わったと認識
 const int DURATON_TIME = 400;             //一定時間(ms)経過後shake状態を解除する
-const float BACK_JERK_THRESHOULD = -11000;
-const float BACK_ACCEL_THRESHOULD = 16000;
+const float BACK_JERK_THRESHOULD = -11000.0 / ACCEL_SCALE;
+const float BACK_ACCEL_THRESHOULD = 16000.0 / ACCEL_SCALE;
 
 // ★ 親機からのコマンドを受信
 typedef struct {
@@ -171,10 +178,11 @@ void setup() {
   Wire.write(0x6B);
   Wire.write(0);
   Wire.endTransmission(true);
+  
   // ★ MPU-6050 加速度レンジ 初期化
   Wire.beginTransmission(MPU_addr);
   Wire.write(0x1C);
-  Wire.write(0x00);// ±2g //0x18); // +/- 16G
+  Wire.write(ACCEL_RANGE);  // 設定マクロを使用
   Wire.endTransmission(true);
   
   // ★ ESP-NOW初期化
@@ -193,6 +201,11 @@ void setup() {
   esp_now_add_peer(parentMAC, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
   
 #ifdef DEBUG
+  Serial.print("Accel Range: ±");
+  Serial.print((int)(ACCEL_SCALE * 2));
+  Serial.println("g");
+  Serial.print("JERK_THRESHOLD (scaled): ");
+  Serial.println(JERK_THRESHOLD);
   Serial.print("ESP-NOW Child #");
   Serial.print(CHILD_ID);
   Serial.println(" Ready!");
@@ -211,11 +224,40 @@ void loop() {
   Wire.beginTransmission(MPU_addr);
   Wire.write(0x3B);
   Wire.endTransmission(false);
-  Wire.requestFrom(MPU_addr, 6, 1);
+  
+  // ★ I²C通信エラーチェック
+  uint8_t bytesReceived = Wire.requestFrom(MPU_addr, 6, 1);  // ESP8266版
+  
+  if (bytesReceived != 6) {
+#ifdef DEBUG
+    Serial.println("ERROR: I2C read failed");
+#endif
+    delay(20);
+    return;
+  }
   
   AcX = Wire.read() << 8 | Wire.read();
   AcY = Wire.read() << 8 | Wire.read();
   AcZ = Wire.read() << 8 | Wire.read();
+  
+  // ★ 全軸±1以内のエラー値検出
+  if (abs(AcX) <= 1 && abs(AcY) <= 1 && abs(AcZ) <= 1) {
+#ifdef DEBUG
+    Serial.print("ERROR: Invalid sensor data (");
+    Serial.print(AcX); Serial.print(", ");
+    Serial.print(AcY); Serial.print(", ");
+    Serial.print(AcZ); Serial.println(")");
+#endif
+    delay(20);
+    return;
+  }
+  
+  // ★ 飽和検出（警告のみ、処理は継続）
+  if (abs(AcX) >= 32767 || abs(AcY) >= 32767 || abs(AcZ) >= 32767) {
+#ifdef DEBUG
+    Serial.println("WARNING: Sensor saturation");
+#endif
+  }
   
   // 合成加速度を計算
   float currentAccel = sqrt(pow((long)AcX, 2) +
