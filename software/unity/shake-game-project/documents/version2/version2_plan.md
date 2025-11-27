@@ -46,8 +46,8 @@
 | コンポーネント | Version2への扱い | 備考 |
 |---|---|---|
 | SerialPort関連 | 再実装/必要箇所のみ引用 | V1の設計を参照しつつV2の要件に合わせて新規作成 |
-| SerialInputReader | 再実装 | V2は`Time.time`で新規実装（V1は`dspTime`） |
-| KeyboardInputReader | 再実装 | デバッグ入力をV2仕様で新規作成 |
+| SerialInputReader | 再実装 | V2もV1と同じく`AudioSettings.dspTime`を使用（スレッドセーフ、高精度） |
+| KeyboardInputReader | 再実装 | デバッグ入力をV2仕様（CSV形式、dspTime）で新規作成 |
 | AudioManager | 再実装 | SE再生APIはV2用に最低限で新規作成 |
 | GameConstants | 再実装 | V2固有定数のみを`GameConstantsV2`として定義 |
 | Phase/Note系 | 参照のみ | 必要に応じてアルゴリズムや構造を再設計して実装 |
@@ -78,48 +78,43 @@
   - ゲーム開始: `videoPlayer.time = 0; videoPlayer.Play();`
 
 #### 音楽同期
-- **VideoPlayer.time** を使用（動画再生位置、秒単位）
-  - **理由**: 動画と音楽が一体のため、VideoPlayer.timeで十分
-  - **精度**: フレーム単位（30fps = 33ms精度）
-- **⚠️ タイムスタンプの一貫性問題（Version1の設計）**:
-  - **Version1の問題**: SerialInputReaderが`AudioSettings.dspTime`でタイムスタンプ記録
-  - **Version2での要件**: VideoPlayer.timeで動画同期する必要がある
-  - **結果**: 異なる時間軸で整合性が取れない
-- **✅ Version2での解決策**: **Time.timeに統一**
-  - **SerialInputReaderV2を新規作成**: Version1から独立させる
-  - **Version2専用の入力システム**: `InputQueueV2.Enqueue(data, Time.time)`
+- **AudioSettings.dspTime** を使用（高精度オーディオクロック）
   - **理由**: 
-    - `Time.time`: ゲーム開始からの経過時間（秒）
-    - `VideoPlayer.time`: 動画再生位置（秒）
-    - 両方とも同じ時間軸（実時間）で同期可能
-  - **実装**: ゲーム開始時に`gameStartTime = Time.time`を記録、VideoPlayer.time = 0でリセット
+    - VideoPlayerは内部でAudioSourceを使用しており、dspTimeと同期している
+    - スレッドセーフ（バックグラウンドスレッドで使用可能）
+    - 高精度（サンプル単位、44.1kHz = 約0.02ms精度）
+    - フレームレート非依存で安定
+  - **Version1との共通点**: Version1もdspTimeを使用（実績あり）
+- **✅ Version2での実装方針**: **dspTimeに統一**
+  - **SerialInputReaderV2**: `AudioSettings.dspTime`でタイムスタンプ記録（Version1と同じ）
+  - **InputQueueV2**: `double timestamp`でdspTimeを保持
+  - **ゲーム開始時の基準記録**: `gameStartDspTime = AudioSettings.dspTime`
+  - **音楽時刻取得**: `AudioSettings.dspTime - gameStartDspTime`
 - **判定タイミング取得**:
   ```csharp
-  float currentTime = (float)videoPlayer.time;
-  float shakeTime = shakeTimestamp; // Time.timeで記録されたもの
-  float offset = gameStartTime; // ゲーム開始時のTime.time
-  float adjustedShakeTime = shakeTime - offset;
-  // adjustedShakeTime と currentTime を比較
-  ```
-- **代替案**: ゲーム開始時に基準時刻を記録
-  ```csharp
-  private float gameStartTime;
-  private double videoStartTime;
+  // ゲーム開始時
+  private double gameStartDspTime;
   
   void StartGame() {
-      gameStartTime = Time.time;
-      videoStartTime = videoPlayer.time; // 通常0
+      gameStartDspTime = AudioSettings.dspTime;
+      videoPlayer.time = 0;
       videoPlayer.Play();
   }
   
+  // 現在の音楽時刻（VideoPlayer.timeの代替）
   float GetMusicTime() {
-      return (float)videoPlayer.time - (float)videoStartTime;
+      return (float)(AudioSettings.dspTime - gameStartDspTime);
   }
   
-  float GetShakeTimeRelative(float shakeTimestamp) {
-      return shakeTimestamp - gameStartTime;
+  // 入力判定
+  void ProcessShake(double shakeTimestamp) {
+      float musicTime = GetMusicTime();
+      float shakeRelativeTime = (float)(shakeTimestamp - gameStartDspTime);
+      float diff = Mathf.Abs(musicTime - shakeRelativeTime);
+      // diff < SYNC_WINDOW_SIZE でシンクロ判定
   }
   ```
+- **待機画面での入力**: dspTimeで記録し、ゲーム開始後に相対時刻に変換
 
 ### 2.4 譜面データ
 
@@ -224,18 +219,18 @@ JSON は MusicDTO クラスを使用して上記のような形式で保存さ�
 - **判定ライン**: 画面各メンバーを示すアイコンがあり、そこに流れてくる。
 
 #### 判定精度
-- **VideoPlayer.time** でミリ秒単位の精度（⚠️ dspTimeから変更）
+- **AudioSettings.dspTime** でサンプル単位の高精度（44.1kHz = 約0.02ms）
 - **判定ウィンドウ案**:
   - Perfect: ±50ms
   - Good: ±100ms
   - Bad: ±150ms
 - **実装例**:
   ```csharp
-  JudgeResult Judge(float noteTime, float shakeTime) {
-      float diff = Mathf.Abs(noteTime - shakeTime);
-      if (diff < 0.05f) return JudgeResult.Perfect;
-      if (diff < 0.10f) return JudgeResult.Good;
-      if (diff < 0.15f) return JudgeResult.Bad;
+  JudgeResult Judge(double noteTime, double shakeTime) {
+      double diff = Math.Abs(noteTime - shakeTime);
+      if (diff < 0.05) return JudgeResult.Perfect;
+      if (diff < 0.10) return JudgeResult.Good;
+      if (diff < 0.15) return JudgeResult.Bad;
       return JudgeResult.Miss;
   }
   ```
@@ -282,17 +277,19 @@ JSON は MusicDTO クラスを使用して上記のような形式で保存さ�
 
 ##### シンクロ判定システム
 - **入力収集**:
-  - SerialInputReaderが各ESP8266からのシェイク信号を受信
-  - タイムスタンプ（**Time.time**）と共に記録 ← ⚠️ dspTimeから変更
-  - デバイスIDと時刻のペアを保存: `(deviceId, timestamp)`
+  - SerialInputReaderV2が各ESP8266からのシェイク信号を受信（バックグラウンドスレッド）
+  - タイムスタンプ（**AudioSettings.dspTime**）と共に記録（スレッドセーフ、高精度）
+  - デバイスIDと時刻のペアを保存: `(deviceId, timestamp)` ※timestampはdouble型
 - **シンクロ率計算**:
   - **方式1: スライディングウィンドウ（推奨）**
     ```csharp
-    float CalculateSyncRate(float currentTime, float windowSize = 0.2f) {
+    float CalculateSyncRate(double currentTime, float windowSize = 0.2f) {
         int shakeCount = 0;
         foreach (var device in registeredDevices) {
-            float lastShakeTime = GetLastShakeTime(device);
-            if (Mathf.Abs(currentTime - lastShakeTime) < windowSize) {
+            double lastShakeTime = GetLastShakeTime(device);  // dspTime
+            double relativeShakeTime = lastShakeTime - gameStartDspTime;
+            double relativeMusicTime = currentTime - gameStartDspTime;
+            if (Math.Abs(relativeMusicTime - relativeShakeTime) < windowSize) {
                 shakeCount++;
             }
         }
@@ -469,10 +466,13 @@ JSON は MusicDTO クラスを使用して上記のような形式で保存さ�
 
 ## 4. 実装計画（詳細版）
 
-### ⚠️ 重要な技術的修正点
-1. **タイムスタンプ統一**: `AudioSettings.dspTime` → `Time.time` に変更
+### ⚠️ 重要な技術方針
+1. **タイムスタンプ統一**: `AudioSettings.dspTime`に統一（Version1と同じ、実績あり）
+   - スレッドセーフ（バックグラウンドスレッドで使用可能）
+   - 高精度（サンプル単位、約0.02ms精度）
+   - VideoPlayerの音声クロックと同期
 2. **ポップアップのObject Pool化**: GC削減のため必須
-3. **時刻同期検証**: VideoPlayer.timeとTime.timeの整合性確認が最重要
+3. **時刻同期検証**: dspTimeベースの相対時刻計算の精度確認が重要
 
 ---
 
@@ -496,16 +496,16 @@ JSON は MusicDTO クラスを使用して上記のような形式で保存さ�
   - UI/: TimerDisplay, PhaseDisplay, PhaseProgressBar, ScoreDisplay等
 #### 0-2. Version2/フォルダ構成作成(0.3日)
 - [x] Version2/フォルダ構造作成(上記2.1参照)
-- [ ] Version2専用GameConstants作成
+- [x] Version2専用GameConstants作成
   - `GameConstantsV2.cs`: Version2固有定数
   - SYNC_WINDOW_SIZE, BASE_VOLTAGE, VOLTAGE_MAX等
 
 #### 0-3. シーン準備(0.2日)
 - [x] `Scenes/Version1_GameScene.unity` に現在のシーンをリネーム
 - [x] `Scenes/Version2_GameScene.unity` を新規作成
-- [ ] Version2シーンに必要なオブジェクト配置
+- [x] Version2シーンに必要なオブジェクト配置
   - MainCamera, EventSystem, Canvas
-  - VideoPlayer用RenderTexture設定
+  - VideoPlayerをCamera Far Planeで表示（UIはCanvasで前面に重ねる）
 
 **準備フェーズ完了条件**:
 - Version1が元のフォルダ構成で正常動作
@@ -513,35 +513,45 @@ JSON は MusicDTO クラスを使用して上記のような形式で保存さ�
 - 2つのシーンが独立して管理可能
 
 ### Phase 1: コア実装（3日）
-
+#### 0. シリアルポート管理
+- Version1のをコピーしてくる
 #### 1-1. 入力システム構築（1日、V2は完全新規）
-- [ ] **SerialInputReaderV2.cs** 新規作成 ← ⚠️ Version1から独立
-  - SerialPortManager（Core/）を使用
-  - タイムスタンプ: `Time.time`（Version2専用）
+- [x] **SerialInputReaderV2.cs** 新規作成 ← Version1と同じdspTime方式
+  - SerialInputReader（Version1）を参考にする。
+  - タイムスタンプ: `AudioSettings.dspTime`（Version1と同じ、スレッドセーフ）
   - 入力先: `InputQueueV2`（Version2専用の統一キュー）
-  - スレッド実装はVersion1を参考
+  - スレッド実装はVersion1と同様
   ```csharp
-  // Version2専用のタイムスタンプ記録
-  string data = SerialPortManager.Instance.ReadLine();
+  // dspTimeでタイムスタンプ記録（スレッドセーフ）
+  string data = SerialPortManagerV2.Instance.ReadLine();
   if (!string.IsNullOrEmpty(data)) {
-      InputQueueV2.Enqueue(data.Trim(), Time.time);
+      double timestamp = AudioSettings.dspTime;
+      InputQueueV2.Enqueue(data.Trim(), timestamp);
   }
   ```
-- [ ] **KeyboardInputReaderV2.cs** 新規作成
-  - デバッグ用、スペースキーでシェイク
-  - タイムスタンプ: `Time.time`
+- [x] **KeyboardInputReaderV2.cs** 新規作成
+  - デバッグ用、スペースキー・数字キー（0-9）でシェイク
+  - CSV形式シミュレーション: `ID,COUNT,ACCEL`
+  - タイムスタンプ: `AudioSettings.dspTime`
   - 入力先: `InputQueueV2`
-- [ ] **InputQueueV2.cs** 新規作成（静的クラス）
+- [x] **InputQueueV2.cs** 新規作成（静的クラス）
   - Version2専用の統一入力キュー
-  - `ConcurrentQueue<(string data, string deviceId, float timestamp)>`
-  - デバイスID解析機能を含む
+  - `ConcurrentQueue<ShakeInput>` ※ShakeInputは`double timestamp`を含む
+  - CSV形式パース機能を含む: `ID,COUNT,ACCEL`
   ```csharp
   public static class InputQueueV2 {
+      public struct ShakeInput {
+          public string rawData;
+          public string deviceId;  // 0~9の数値文字列
+          public double timestamp; // AudioSettings.dspTime
+          public int count;
+          public float accel;
+      }
       private static ConcurrentQueue<ShakeInput> queue = new ConcurrentQueue<ShakeInput>();
       
-      public static void Enqueue(string data, float timestamp) {
-          string deviceId = ExtractDeviceId(data);
-          queue.Enqueue(new ShakeInput(data, deviceId, timestamp));
+      public static void Enqueue(string data, double timestamp) {
+          ParseSerialPayload(data, out string deviceId, out int count, out float accel);
+          queue.Enqueue(new ShakeInput(data, deviceId, timestamp, count, accel));
       }
       
       public static bool TryDequeue(out ShakeInput input) {
@@ -549,38 +559,48 @@ JSON は MusicDTO クラスを使用して上記のような形式で保存さ�
       }
   }
   ```
-- [ ] **動作確認**: シリアル入力とキーボード入力が同時に動作
-- **検証**: スペースキーでTime.timeがログ出力されることを確認
+- [x] **動作確認**: シリアル入力とキーボード入力が同時に動作
+- **検証**: スペースキーでAudioSettings.dspTimeがログ出力されることを確認
 
 #### 1-2. 基本マネージャー実装（1日、V2は完全新規）
 - [ ] **GameManagerV2.cs** 新規作成
   - イベント管理: `OnIdleStart`, `OnGameStart`, `OnGameEnd`
-  - 基準時刻記録: `gameStartTime`（Time.time）
+  - 基準時刻記録: `gameStartDspTime`（AudioSettings.dspTime）
   - シングルトンパターン
   - Version1のGameManagerを参考（別ファイル）
   ```csharp
-  private float gameStartTime;
+  private double gameStartDspTime;
+  public bool IsGameStarted { get; private set; }
   
   public void StartGame() {
-      gameStartTime = Time.time;
+      gameStartDspTime = AudioSettings.dspTime;
+      IsGameStarted = true;
+      VideoManager.Instance.PlayFromStart();
       OnGameStart?.Invoke();
   }
   
-  public float GetRelativeTime(float absoluteTime) {
-      return absoluteTime - gameStartTime;
+  // 音楽時刻取得（VideoPlayer.timeの代替）
+  public float GetMusicTime() {
+      if (!IsGameStarted) return 0f;
+      return (float)(AudioSettings.dspTime - gameStartDspTime);
+  }
+  
+  // 入力時刻を相対時刻に変換
+  public float GetRelativeTime(double absoluteDspTime) {
+      return (float)(absoluteDspTime - gameStartDspTime);
   }
   ```
 - [ ] **DeviceManager.cs** 新規作成
   - InputQueueV2から入力取得
   - デバイスID管理: `Dictionary<string, DeviceInfo>`
   - 登録ロジック: 10回連続シェイク検知
-  - 最終シェイク時刻記録: `Dictionary<string, float>`
+  - 最終シェイク時刻記録: `Dictionary<string, double>` ※dspTime
   - 同時シェイク検知: 200msウィンドウ
   - デバッグモード: 1台でもゲーム開始可能
   ```csharp
   public class DeviceInfo {
       public string deviceId;
-      public float lastShakeTime;
+      public double lastShakeTime;  // AudioSettings.dspTime
       public int consecutiveShakes;  // 登録用カウント
   }
   ```
@@ -605,7 +625,7 @@ JSON は MusicDTO クラスを使用して上記のような形式で保存さ�
   - VideoPlayerコンポーネント制御
   - StreamingAssets/Videos/からMP4読み込み
   - ループ再生・頭出し再生切り替え
-  - 時刻取得: `GetMusicTime()` → `(float)videoPlayer.time`
+  - **重要**: 音楽時刻はGameManagerV2.GetMusicTime()を使用（dspTimeベース）
   ```csharp
   private VideoPlayer videoPlayer;
   
@@ -618,10 +638,12 @@ JSON は MusicDTO クラスを使用して上記のような形式で保存さ�
       videoPlayer.time = 0;
       videoPlayer.isLooping = false;
       videoPlayer.Play();
+      // ゲーム開始dspTimeはGameManagerV2が管理
   }
   
+  // 音楽時刻取得はGameManagerV2に委譲
   public float GetMusicTime() {
-      return (float)videoPlayer.time;
+      return GameManagerV2.Instance.GetMusicTime();
   }
   ```
 - [ ] 動画素材準備
@@ -629,21 +651,28 @@ JSON は MusicDTO クラスを使用して上記のような形式で保存さ�
   - コーデック: H.264
   - ビットレート: 3-5Mbps（500MB以下目標）
   - 配置: `StreamingAssets/Videos/test_video.mp4`
-- [ ] RenderTexture設定
-  - VideoPlayerのTarget TextureにRenderTexture設定
-  - CanvasのRawImageで背景表示
-- [ ] **時刻同期テスト** ← ⚠️ 最重要
+- [ ] 表示方式をCamera Far Planeに設定
+  - VideoPlayerのRender Modeを「Camera Far Plane」に設定
+  - Target Camera に `MainCamera` を割り当て
+  - CameraのDepthはUI Canvasより背面（CanvasはScreen Space - Overlay推奨）
+  - アスペクト調整はCameraのViewport RectまたはVideoPlayerの「Aspect Ratio: Fit Vertically/Letterbox」等で調整
+  - URPの場合、PostProcessingの影響を受けるため、必要ならLayer分離（例: `Video`レイヤー）とCamera Stackで管理
+
+時刻同期テスト** ← ⚠️ 最重要
   ```csharp
   void Update() {
-      float videoTime = VideoManager.Instance.GetMusicTime();
-      float gameTime = Time.time - gameStartTime;
-      float diff = Mathf.Abs(videoTime - gameTime);
+      if (!GameManagerV2.Instance.IsGameStarted) return;
+      
+      float musicTime = GameManagerV2.Instance.GetMusicTime();  // dspTimeベース
+      float videoTime = (float)VideoManager.Instance.videoPlayer.time;
+      float diff = Mathf.Abs(musicTime - videoTime);
+      
       if (diff > 0.1f) {
-          Debug.LogWarning($"[時刻ずれ検出] Video: {videoTime:F3}s, Game: {gameTime:F3}s, Diff: {diff:F3}s");
+          Debug.LogWarning($"[時刻ずれ検出] dspTime: {musicTime:F3}s, VideoTime: {videoTime:F3}s, Diff: {diff:F3}s");
       }
   }
   ```
-- **検証**: 動画ループ再生→ゲーム開始で頭出し→時刻ずれが0.1秒以内
+- **検証**: 動画ループ再生→ゲーム開始で頭出し→dspTimeとVideoPlayer.timeのずれが0.1秒以内
 
 #### 1-4. 基本UI（0.5日、V2は完全新規）
 - [ ] **VoltageGaugeUI.cs** 新規作成
@@ -671,9 +700,9 @@ JSON は MusicDTO クラスを使用して上記のような形式で保存さ�
 **Phase 1 目標**: 動画ループ＋デバイス登録＋同時シェイクで開始、時刻同期確認（ずれ<100ms）
 
 **Phase 1 完了条件**:
-- ✅ Version2専用の入力システムが動作
+- ✅ Version2専用の入力システムが動作（dspTimeベース）
 - ✅ デバイス登録→同時シェイク→ゲーム開始の流れが完成
-- ✅ VideoPlayer.timeとTime.timeのずれが100ms以内
+- ✅ dspTimeベースの音楽時刻とVideoPlayer.timeのずれが100ms以内
 - ✅ 基本UIが表示され、ゲージが動作
 
 ---
@@ -688,29 +717,37 @@ JSON は MusicDTO クラスを使用して上記のような形式で保存さ�
   - ウィンドウサイズ: Inspector調整可能（default 0.2s）
   ```csharp
   void Update() {
-      // InputQueueV2から入力取得
+      if (!GameManagerV2.Instance.IsGameStarted) {
+          // 待機中はデバイス登録処理のみ
+          while (InputQueueV2.TryDequeue(out var input)) {
+              DeviceManager.Instance.ProcessRegistration(input.deviceId, input.timestamp);
+          }
+          return;
+      }
+      
+      // ゲーム中の入力処理
       while (InputQueueV2.TryDequeue(out var input)) {
           // DeviceManagerに最終シェイク時刻を記録
           DeviceManager.Instance.RecordShake(input.deviceId, input.timestamp);
           
           // シンクロ率計算
-          float currentTime = VideoManager.Instance.GetMusicTime();
-          float syncRate = CalculateSyncRate(currentTime);
+          float musicTime = GameManagerV2.Instance.GetMusicTime();
+          float syncRate = CalculateSyncRate(musicTime);
           
           // イベント発行
-          OnSyncDetected?.Invoke(syncRate, currentTime);
+          OnSyncDetected?.Invoke(syncRate, musicTime);
       }
   }
   
-  float CalculateSyncRate(float currentTime) {
+  float CalculateSyncRate(float currentMusicTime) {
       float windowSize = GameConstantsV2.SYNC_WINDOW_SIZE;
       int syncCount = 0;
       
       foreach (var device in DeviceManager.Instance.GetRegisteredDevices()) {
-          float lastShakeTime = device.lastShakeTime;
-          float relativeShakeTime = lastShakeTime - GameManagerV2.Instance.gameStartTime;
+          double lastShakeDspTime = device.lastShakeTime;  // dspTime
+          float relativeShakeTime = GameManagerV2.Instance.GetRelativeTime(lastShakeDspTime);
           
-          if (Mathf.Abs(currentTime - relativeShakeTime) < windowSize) {
+          if (Mathf.Abs(currentMusicTime - relativeShakeTime) < windowSize) {
               syncCount++;
           }
       }
@@ -860,22 +897,22 @@ JSON は MusicDTO クラスを使用して上記のような形式で保存さ�
 
 #### 調整-2. 時刻同期最終検証（0.3日） ← ⚠️ 最重要
 - [ ] **短期ずれ確認**
-  - 1分間のプレイでVideoPlayer.time vs Time.timeのずれ記録
+  - 1分間のプレイでdspTimeベースの音楽時刻 vs VideoPlayer.timeのずれ記録
   - 許容範囲: ±100ms以内
 - [ ] **長期ドリフト確認**
   - 3分間（曲1本分）のプレイでドリフト確認
-  - ずれが累積しないことを確認
+  - dspTimeは高精度なのでドリフトはほぼ発生しないはず
 - [ ] **補正処理追加（必要に応じて）**
   ```csharp
-  // ずれが大きい場合の補正
-  float videoTime = VideoManager.Instance.GetMusicTime();
-  float gameTime = Time.time - gameStartTime;
-  float diff = videoTime - gameTime;
+  // ずれが大きい場合の補正（通常は不要だが保険として）
+  float dspMusicTime = GameManagerV2.Instance.GetMusicTime();
+  float videoTime = (float)videoPlayer.time;
+  float diff = videoTime - dspMusicTime;
   
   if (Mathf.Abs(diff) > 0.2f) {
-      // ゲーム開始時刻を補正
-      gameStartTime -= diff;
-      Debug.LogWarning($"[時刻補正] Adjusted by {diff:F3}s");
+      // ゲーム開始dspTimeを補正
+      GameManagerV2.Instance.gameStartDspTime -= diff;
+      Debug.LogWarning($"[時刻補正] Adjusted dspTime offset by {diff:F3}s");
   }
   ```
 
