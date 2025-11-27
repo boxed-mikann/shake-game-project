@@ -771,7 +771,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c6407ebcf942a3242975a4c004977c38, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  scoreText: {fileID: 0}
 --- !u!1 &297038947
 GameObject:
   m_ObjectHideFlags: 0
@@ -919,7 +918,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0281f700af607d4479b5a1e88ad5e511, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  timerText: {fileID: 0}
 --- !u!1 &415558794
 GameObject:
   m_ObjectHideFlags: 0
@@ -2474,23 +2472,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c3a87ecd66d16b64ca025be88b281cdb, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  phaseSlider: {fileID: 1482988001}
-  phaseLabel: {fileID: 0}
-  notePhaseColor:
-    r: 1
-    g: 0.7
-    b: 0
-    a: 1
-  restPhaseColor:
-    r: 0.3
-    g: 0.8
-    b: 1
-    a: 1
-  lastSprintColor:
-    r: 1
-    g: 0.2
-    b: 0.2
-    a: 1
 --- !u!114 &1482988001
 MonoBehaviour:
   m_ObjectHideFlags: 0

@@ -32,6 +32,12 @@ float baseAccel = 0;
                      ACCEL_RANGE == 0x08 ? 2.0 : \
                      ACCEL_RANGE == 0x10 ? 4.0 : 8.0)
 
+// ★ 異常値検出用の範囲（g単位で定義、自動スケーリング）
+const float MIN_VALID_G = 0.5;   // 最小: 0.5g（静置時の50%）
+const float MAX_VALID_G = 6.0;   // 最大: 6g（通常シェイクの上限）
+const float MIN_VALID_ACCEL = (MIN_VALID_G * 16384.0) / ACCEL_SCALE;  // ±2g時: 8192, ±16g時: 1024
+const float MAX_VALID_ACCEL = (MAX_VALID_G * 16384.0) / ACCEL_SCALE;  // ±2g時: 98304, ±16g時: 12288
+
 // ★ 調整用パラメータ（±2g基準値 / ACCEL_SCALE で自動調整）
 // シェイク検知
 const float JERK_THRESHOLD = 17000.0 / ACCEL_SCALE;      // ジャーク（加速度の変化率）の閾値
@@ -255,6 +261,22 @@ void loop() {
   float currentAccel = sqrt(pow((long)AcX, 2) +
                             pow((long)AcY, 2) +
                             pow((long)AcZ, 2));
+  
+  // ★ 合成加速度の妥当性チェック（物理的に不可能な値を除外）
+  if (currentAccel < MIN_VALID_ACCEL || currentAccel > MAX_VALID_ACCEL) {
+#ifdef DEBUG
+    Serial.print("ERROR: Accel out of range (");
+    Serial.print(currentAccel / (16384.0 / ACCEL_SCALE), 2);  // g単位で表示
+    Serial.print("g) - valid range: ");
+    Serial.print(MIN_VALID_G, 1);
+    Serial.print("g ~ ");
+    Serial.print(MAX_VALID_G, 1);
+    Serial.println("g");
+#endif
+    delay(20);
+    return;
+  }
+  
   Serial.print("Accel: ");
   Serial.println(currentAccel);
   
