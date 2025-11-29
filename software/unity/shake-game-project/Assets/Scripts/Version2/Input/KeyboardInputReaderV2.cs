@@ -69,11 +69,14 @@ public class KeyboardInputReaderV2 : MonoBehaviour
 
         // シリアルフォーマットに合わせて生成
         string data = string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0},{1},{2}", id, cnt, accel);
-        InputQueueV2.Enqueue(data, timestamp);
+        
+        // ShakeResolverV2に直接送信（InputQueueV2は使わない）
+        string deviceId = id.ToString();
+        ShakeResolverV2.EnqueueInput(deviceId, timestamp);
 
         if (GameConstantsV2.DEBUG_MODE)
         {
-            Debug.Log($"[KeyboardInputReaderV2] Simulated CSV: {data} at {timestamp:F3}s");
+            Debug.Log($"[KeyboardInputReaderV2] Simulated: DeviceID={deviceId} at {timestamp:F3}s");
         }
     }
 }

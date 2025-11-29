@@ -96,8 +96,13 @@ public class SerialInputReaderV2 : MonoBehaviour
                     // ★ AudioSettings.dspTime はスレッドセーフで高精度（Version1と同じ方式）
                     double timestamp = AudioSettings.dspTime;
                     
-                    // InputQueueV2 に追加
-                    InputQueueV2.Enqueue(data.Trim(), timestamp);
+                    // CSVパースしてdeviceIdを抽出
+                    string[] parts = data.Trim().Split(',');
+                    if (parts.Length >= 1)
+                    {
+                        string deviceId = parts[0];
+                        ShakeResolverV2.EnqueueInput(deviceId, timestamp);
+                    }
                 }
             }
             catch (System.Exception ex)
