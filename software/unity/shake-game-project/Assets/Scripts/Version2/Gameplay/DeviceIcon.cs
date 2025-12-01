@@ -1,7 +1,7 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-public class DeviceIcon : MonoBehaviour
+public class DeviceIcon : MonoBehaviour, IShakeable
 {
     private SpriteRenderer spriteRenderer;
     private Image uiImage;
@@ -19,6 +19,8 @@ public class DeviceIcon : MonoBehaviour
         if (transform.childCount > 0)
         {
             hitEffectObject = transform.GetChild(0).gameObject; // CFXR3 Hit Misc A
+            //デバッグログ
+            Debug.Log("[DeviceIcon] Hit effect object found: " + hitEffectObject.name);
         }
     }
     
@@ -36,11 +38,11 @@ public class DeviceIcon : MonoBehaviour
             spriteRenderer.enabled = true;
         }
         
-        // エフェクトを初期化
-        if (hitEffectObject != null)
-        {
-            hitEffectObject.SetActive(false);
-        }
+        // // エフェクトを初期化
+        // if (hitEffectObject != null)
+        // {
+        //     hitEffectObject.SetActive(false);
+        // }
     }
     
     public string GetDeviceId() => deviceId;
@@ -55,9 +57,21 @@ public class DeviceIcon : MonoBehaviour
     {
         if (hitEffectObject != null)
         {
-            // エフェクトを一時的にアクティブ化（CFXR想定）
-            hitEffectObject.SetActive(false); // リセット
-            hitEffectObject.SetActive(true);  // 再生
+            // ParticleSystem で再生制御
+            var particleSystem = hitEffectObject.GetComponent<ParticleSystem>();
+            if (particleSystem != null)
+            {
+                Debug.Log("[DeviceIcon] Playing CFXR particle effect for deviceId: " + deviceId);
+                particleSystem.Stop();
+                particleSystem.Play();
+            }
+            else
+            {
+                // ParticleSystem がない場合は SetActive で再生
+                Debug.Log("[DeviceIcon] No ParticleSystem found, using SetActive for deviceId: " + deviceId);
+                // hitEffectObject.SetActive(false);
+                // hitEffectObject.SetActive(true);
+            }
             return;
         }
         
@@ -65,6 +79,7 @@ public class DeviceIcon : MonoBehaviour
         var t = transform;
         if (t is RectTransform)
         {
+            Debug.Log("[DeviceIcon] Playing UIScalePunch for deviceId: " + deviceId);
             // 簡易スケールアニメーション
             StopAllCoroutines();
             StartCoroutine(UIScalePunch((RectTransform)t));
