@@ -2,6 +2,8 @@ using System.IO;
 using UnityEngine;
 using UnityEngine.Video;
 
+//大体チェック済み
+
 public class VideoManager : MonoBehaviour
 {
     public static VideoManager Instance { get; private set; }
@@ -17,6 +19,32 @@ public class VideoManager : MonoBehaviour
     private bool isPrepared = false;
 
     public VideoPlayer Player => videoPlayer;
+    //ゲーム開始タイミングを記録する変数
+    private float gameStartTime;
+
+    private void OnEnable()
+    {
+        // ゲームフェーズイベントを購読
+        if (GameManagerV2.Instance != null)
+        {
+            //GameManagerV2.Instance.OnResisterStart += OnResisterStart;
+            //GameManagerV2.Instance.OnIdleStart += OnIdleStart;
+            GameManagerV2.Instance.OnGameStart += OnGameStart;
+            //GameManagerV2.Instance.OnGameEnd += OnGameEnd;
+        }
+    }
+
+    private void OnDisable()
+    {
+        // unsubscribe to avoid memory leaks
+        if (GameManagerV2.Instance != null)
+        {
+            //GameManagerV2.Instance.OnResisterStart -= OnResisterStart;
+            //GameManagerV2.Instance.OnIdleStart -= OnIdleStart;
+            GameManagerV2.Instance.OnGameStart -= OnGameStart;
+            //GameManagerV2.Instance.OnGameEnd -= OnGameEnd;
+        }
+    }
 
     private void Awake()
     {
@@ -26,7 +54,7 @@ public class VideoManager : MonoBehaviour
             return;
         }
         Instance = this;
-        DontDestroyOnLoad(gameObject);
+        //DontDestroyOnLoad(gameObject);
 
         if (videoPlayer == null)
         {
@@ -40,9 +68,9 @@ public class VideoManager : MonoBehaviour
 
     private void Start()
     {
-        // GameConstantsV2 に定義があれば優先
-        if (!string.IsNullOrEmpty(GameConstantsV2VideoPath))
-            streamingRelativePath = GameConstantsV2VideoPath;
+        // // GameConstantsV2 に定義があれば優先
+        // if (!string.IsNullOrEmpty(GameConstantsV2VideoPath))
+        //     streamingRelativePath = GameConstantsV2VideoPath;
 
         if (autoLoadOnStart)
         {
@@ -51,19 +79,19 @@ public class VideoManager : MonoBehaviour
         }
     }
 
-    private static string GameConstantsV2VideoPath
-    {
-        get
-        {
-            try
-            {
-                // ある場合のみ使う（存在しない場合でも例外は出さない）
-                var field = typeof(GameConstantsV2).GetField("VIDEO_RELATIVE_PATH");
-                return field != null ? (string)field.GetValue(null) : null;
-            }
-            catch { return null; }
-        }
-    }
+    // private static string GameConstantsV2VideoPath
+    // {
+    //     get
+    //     {
+    //         try
+    //         {
+    //             // ある場合のみ使う（存在しない場合でも例外は出さない）
+    //             var field = typeof(GameConstantsV2).GetField("VIDEO_RELATIVE_PATH");
+    //             return field != null ? (string)field.GetValue(null) : null;
+    //         }
+    //         catch { return null; }
+    //     }
+    // }
 
     private void HookPlayerEvents()
     {
@@ -111,7 +139,7 @@ public class VideoManager : MonoBehaviour
         }
         else if (!videoPlayer.isPlaying)
         {
-            videoPlayer.Play();
+            VideoPlay();
         }
     }
 
@@ -119,13 +147,13 @@ public class VideoManager : MonoBehaviour
     {
         videoPlayer.prepareCompleted -= PlayOnPreparedLoopOnce;
         if (videoPlayer == null) return;
-        videoPlayer.Play();
+        VideoPlay();
     }
 
     public void PlayFromStart()
     {
         if (videoPlayer == null) return;
-        videoPlayer.isLooping = false;
+        videoPlayer.isLooping = true;//false;TODO ずっとループで、ゲーム開始時にかいしりせっとだけということにしようかな
         if (!isPrepared)
         {
             Prepare();
@@ -134,7 +162,7 @@ public class VideoManager : MonoBehaviour
         else
         {
             videoPlayer.time = 0;
-            videoPlayer.Play();
+            VideoPlay();
         }
     }
 
@@ -143,7 +171,7 @@ public class VideoManager : MonoBehaviour
         videoPlayer.prepareCompleted -= PlayFromStartOnPreparedOnce;
         if (videoPlayer == null) return;
         videoPlayer.time = 0;
-        videoPlayer.Play();
+        VideoPlay();
     }
 
     public void Stop()
@@ -152,15 +180,63 @@ public class VideoManager : MonoBehaviour
         videoPlayer.Stop();
     }
 
-    // 音楽時刻（dspTimeベース）。VideoPlayer.time の代替として利用。
+    //videoPlayer.Play()の時にゲーム開始タイミングを記録する。videoPlayer.Play()をこれで置き換える
+    private void VideoPlay()
+    {
+        if (videoPlayer == null) return;
+        videoPlayer.Play();
+        gameStartTime = (float)AudioSettings.dspTime - (float)videoPlayer.time;
+    }
+
+    // 音楽時刻（dspTimeベース）。音楽時刻はVideoManagerが管理することとする。
     public float GetMusicTime()
     {
-        return GameManagerV2.Instance != null ? GameManagerV2.Instance.GetMusicTime() : 0f;
+        return (float)(AudioSettings.dspTime - gameStartTime);
     }
 
     // 参考: 実動画時間（同期検証やデバッグ用）
     public float GetVideoTime()
     {
         return videoPlayer != null ? (float)videoPlayer.time : 0f;
+    }
+    //同期検証用
+    public float GetLag()
+    {
+        if (videoPlayer == null) return 0f;
+        float videoTime = (float)videoPlayer.time;
+        float musicTime = (float)(AudioSettings.dspTime - gameStartTime);
+        return musicTime - videoTime;
+    }
+    //ラグリセット用,dspTimeベースの曲内時間とvideoPlayer.timeがずれたなら、デバッグログを出してgameStartTimeを調整する
+    public float ResetRag()
+    {
+        if (videoPlayer == null) return 0f;
+        float videoTime = (float)videoPlayer.time;
+        float musicTime = (float)(AudioSettings.dspTime - gameStartTime);
+        float lag = musicTime - videoTime;
+        Debug.LogWarning($"[VideoManager] ResetRag: videoTime={videoTime:F3}, musicTime={musicTime:F3}, lag={lag:F3}");
+        //gameStartTimeを調整してラグをリセット
+        gameStartTime = (float)AudioSettings.dspTime - videoTime;
+        return lag;
+    }
+
+    private void OnGameStart()
+    {
+        PlayFromStart();
+    }
+
+    private void Update()
+    {
+        // デバッグ用: 動画の準備状態を表示
+        // Debug.Log($"[VideoManager] isPrepared: {isPrepared}, isPlaying: {videoPlayer.isPlaying}, time: {videoPlayer.time}");
+        // デバッグ用: 動画時間と音楽時間のずれが大きい場合に警告を表示
+        if (isPrepared && videoPlayer.isPlaying)
+        {
+            float lag = GetLag();
+            if (Mathf.Abs(lag) > 0.5f)
+            {
+                //Debug.LogWarning($"[VideoManager] Large lag detected: {lag:F3} seconds.");
+            }
+        }
     }
 }

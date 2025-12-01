@@ -80,9 +80,9 @@ public class NoteSpawnerV2 : MonoBehaviour
     void Update()
     {
         if (!isSpawning || currentChart == null) return;
-        if (!GameManagerV2.Instance.IsGameStarted) return;
+        //if (!GameManagerV2.Instance.IsGameStarted) return;
         
-        float currentMusicTime = GameManagerV2.Instance.GetMusicTime();
+        float currentMusicTime = 0;//GameManagerV2.Instance.GetMusicTime();
         
         // 生成タイミングに達したノーツをスポーン
         while (currentNoteIndex < currentChart.notes.Count)

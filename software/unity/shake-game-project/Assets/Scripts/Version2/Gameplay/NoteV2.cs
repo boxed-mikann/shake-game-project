@@ -46,10 +46,10 @@ public class NoteV2 : MonoBehaviour
     void Update()
     {
         if (!isInitialized) return;
-        if (!GameManagerV2.Instance.IsGameStarted) return;
+        //if (!GameManagerV2.Instance.IsGameStarted) return;
         
         // 音楽時刻に基づいて移動
-        float currentMusicTime = GameManagerV2.Instance.GetMusicTime();
+        float currentMusicTime = 0;//GameManagerV2.Instance.GetMusicTime();
         float timeToNote = noteTime - currentMusicTime;
         
         // 判定ラインまでの距離を時間に基づいて計算

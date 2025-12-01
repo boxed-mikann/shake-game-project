@@ -29,7 +29,7 @@ public class ShakeResolverV2 : MonoBehaviour
     
     private void ProcessShake(string deviceId, double timestamp)
     {
-        bool isGameStarted = GameManagerV2.Instance != null && GameManagerV2.Instance.IsGameStarted;
+        bool isGameStarted = GameManagerV2.Instance != null ;//&& GameManagerV2.Instance.IsGameStarted;
         Debug.Log($"[ShakeResolverV2] IsGameStarted={isGameStarted}");
         
         if (!isGameStarted)

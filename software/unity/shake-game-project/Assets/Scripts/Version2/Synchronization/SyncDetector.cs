@@ -32,7 +32,7 @@ public class SyncDetector : MonoBehaviour
     /// </summary>
     public void OnShakeInput(string deviceId, double timestamp)
     {
-        if (!GameManagerV2.Instance.IsGameStarted) return;
+        //if (!GameManagerV2.Instance.IsGameStarted) return;
         if (DeviceManager.Instance == null) return;
         
         float syncRate = CalculateSyncRate(timestamp);
