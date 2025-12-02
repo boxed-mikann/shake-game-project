@@ -24,34 +24,34 @@ public class VoltageManager : MonoBehaviour
         DontDestroyOnLoad(this.gameObject);
     }
     
-    void OnEnable()
-    {
-        if (SyncDetector.Instance != null)
-        {
-            SyncDetector.Instance.OnSyncDetected += ProcessSync;
-        }
-    }
+    //void OnEnable()
+    //{
+    //    if (SyncDetector.Instance != null)
+    //    {
+    //        SyncDetector.Instance.OnSyncDetected += ProcessSync;
+    //    }
+    //}
     
-    void OnDisable()
-    {
-        if (SyncDetector.Instance != null)
-        {
-            SyncDetector.Instance.OnSyncDetected -= ProcessSync;
-        }
-    }
+    //void OnDisable()
+    //{
+    //    if (SyncDetector.Instance != null)
+    //    {
+    //        SyncDetector.Instance.OnSyncDetected -= ProcessSync;
+    //    }
+    //}
     
-    private void ProcessSync(float syncRate, double timestamp)
-    {
-        float phaseMultiplier = 1.0f; // TODO: PhaseManagerから取得（Phase 4）
-        AddVoltage(syncRate, phaseMultiplier);
+    //private void ProcessSync(float syncRate, double timestamp)
+    //{
+    //    float phaseMultiplier = 1.0f; // TODO: PhaseManagerから取得（Phase 4）
+    //    AddVoltage(syncRate, phaseMultiplier);
         
-        if (GameConstantsV2.DEBUG_MODE)
-        {
-            float bonus = Mathf.Pow(syncRate, 2f);
-            float increase = baseVoltagePerTick * phaseMultiplier * bonus;
-            Debug.Log($"[VoltageManager] Sync: {syncRate:P0} → +{increase:F1}V (Total: {currentVoltage:F1}V)");
-        }
-    }
+    //    if (GameConstantsV2.DEBUG_MODE)
+    //    {
+    //        float bonus = Mathf.Pow(syncRate, 2f);
+    //        float increase = baseVoltagePerTick * phaseMultiplier * bonus;
+    //        Debug.Log($"[VoltageManager] Sync: {syncRate:P0} → +{increase:F1}V (Total: {currentVoltage:F1}V)");
+    //    }
+    //}
 
     public float CurrentVoltage => currentVoltage;
     public float MaxVoltage => maxVoltage;

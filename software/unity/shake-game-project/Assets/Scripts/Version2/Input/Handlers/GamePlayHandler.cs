@@ -14,6 +14,12 @@ public class GamePlayHandler : ShakeHandlerBase
     {
         Debug.Log($"[GamePlayHandler] Processing game shake for DeviceID={deviceId}");
         
+        // シンクロ検出システムにシェイクタイミングを通知
+        if (SyncDetector.Instance != null)
+        {
+            SyncDetector.Instance.UpdateDeviceShakeTime(deviceId, timestamp);
+        }
+        
         // 判定処理 - ゲーム開始からの相対時間を計算
         double relativeTime = timestamp; // TODO: VideoManager.GetCurrentTime() を使用
         JudgeManagerV2.JudgementType judgement = JudgeManagerV2.Instance.Judge(deviceId, relativeTime);

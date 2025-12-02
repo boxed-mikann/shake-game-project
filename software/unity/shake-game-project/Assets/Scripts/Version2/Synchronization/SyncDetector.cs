@@ -1,19 +1,23 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// シンクロ判定システム - スライディングウィンドウ方式でシンクロ率を計算
-/// Version1のShakeResolverと連携し、ラグの少ない判定を実現
+/// シンクロ判定システム - スライディングウィンドウ方式でシンクロ人数を計算
+/// デバイスごとの最新シェイクタイミングを管理し、更新時に同期判定を実施
 /// </summary>
 public class SyncDetector : MonoBehaviour
 {
     public static SyncDetector Instance { get; private set; }
     
-    public event Action<float, double> OnSyncDetected; // syncRate, timestamp
+    public event Action<int> OnSyncDetected; // syncCount (同期人数)
     
     [Header("Settings")]
     [SerializeField] private float syncWindowSize = GameConstantsV2.SYNC_WINDOW_SIZE;
-    [SerializeField] private float minSyncRateToDetect = 0.5f; // 50%以上でシンクロ判定
+    [SerializeField] private int minSyncCountToDetect = 2; // 2人以上でシンクロ判定
+    
+    // デバイスIDごとの最新シェイクタイミングを保持
+    private readonly Dictionary<string, double> deviceLatestShakeTimes = new Dictionary<string, double>();
     
     void Awake()
     {
@@ -27,46 +31,65 @@ public class SyncDetector : MonoBehaviour
     }
     
     /// <summary>
-    /// シェイク入力時にシンクロ率を計算
-    /// ShakeResolverV2から呼び出される
+    /// デバイスのシェイクタイミングを更新し、シンクロ判定を実施
+    /// ShakeHandler等から呼び出される
     /// </summary>
-    public void OnShakeInput(string deviceId, double timestamp)
+    public void UpdateDeviceShakeTime(string deviceId, double timestamp)
     {
-        //if (!GameManagerV2.Instance.IsGameStarted) return;
-        if (DeviceManager.Instance == null) return;
+        if (string.IsNullOrEmpty(deviceId)) return;
         
-        float syncRate = CalculateSyncRate(timestamp);
+        // デバイスの最新シェイクタイミングを更新
+        deviceLatestShakeTimes[deviceId] = timestamp;
         
-        // 最小シンクロ率以上の場合のみイベント発行
-        if (syncRate >= minSyncRateToDetect)
-        {
-            OnSyncDetected?.Invoke(syncRate, timestamp);
-            
-            if (GameConstantsV2.DEBUG_MODE)
-            {
-                Debug.Log($"[SyncDetector] シンクロ検出: Rate={syncRate:P0}, Time={timestamp:F3}");
-            }
-        }
+        // 同期判定を実施
+        CheckSync(timestamp);
     }
     
-    private float CalculateSyncRate(double currentTimestamp)
+    /// <summary>
+    /// 指定タイムスタンプから±syncWindowSize以内のシェイクを持つデバイス数を数える
+    /// </summary>
+    private void CheckSync(double currentTimestamp)
     {
-        int totalDevices = DeviceManager.Instance.GetDeviceCount();
-        if (totalDevices == 0) return 0f;
-        
         int syncCount = 0;
         
-        foreach (var device in DeviceManager.Instance.GetRegisteredDevices())
+        foreach (var latestTime in deviceLatestShakeTimes.Values)
         {
-            double lastShakeTime = device.lastShakeTime;
-            double timeDiff = Mathf.Abs((float)(currentTimestamp - lastShakeTime));
+            double timeDiff = Mathf.Abs((float)(currentTimestamp - latestTime));
             
-            if (timeDiff < syncWindowSize)
+            if (timeDiff <= syncWindowSize)
             {
                 syncCount++;
             }
         }
         
-        return (float)syncCount / totalDevices;
+        // 最小シンクロ人数以上の場合のみイベント発行
+        if (syncCount >= minSyncCountToDetect)
+        {
+            OnSyncDetected?.Invoke(syncCount);
+            
+            if (GameConstantsV2.DEBUG_MODE)
+            {
+                Debug.Log($"[SyncDetector] シンクロ検出: Count={syncCount}, Time={currentTimestamp:F3}");
+            }
+        }
+    }
+    
+    /// <summary>
+    /// デバイスが登録解除されたときに呼び出す
+    /// </summary>
+    public void RemoveDevice(string deviceId)
+    {
+        if (deviceLatestShakeTimes.ContainsKey(deviceId))
+        {
+            deviceLatestShakeTimes.Remove(deviceId);
+        }
+    }
+    
+    /// <summary>
+    /// 全デバイスのシェイク履歴をクリア
+    /// </summary>
+    public void ClearAllDevices()
+    {
+        deviceLatestShakeTimes.Clear();
     }
 }
