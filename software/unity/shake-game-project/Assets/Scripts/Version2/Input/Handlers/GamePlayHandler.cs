@@ -3,9 +3,8 @@ using System.Collections.Generic;
 
 /// <summary>
 /// Game（ゲーム進行中）状態のシェイク処理
-/// - シェイク記録処理
-/// - 同期判定処理
-/// - ゲーム中アイコンのエフェクト再生
+/// - 判定処理
+/// - ゲーム中アイコンのエフェクト再生と判定表示
 /// </summary>
 public class GamePlayHandler : ShakeHandlerBase
 {
@@ -15,13 +14,11 @@ public class GamePlayHandler : ShakeHandlerBase
     {
         Debug.Log($"[GamePlayHandler] Processing game shake for DeviceID={deviceId}");
         
-        // シェイク記録処理
-        // if (DeviceManager.Instance != null)
-        // {
-        //     DeviceManager.Instance.RecordShake(deviceId, timestamp);
-        // }
+        // 判定処理 - ゲーム開始からの相対時間を計算
+        double relativeTime = timestamp; // TODO: VideoManager.GetCurrentTime() を使用
+        JudgeManagerV2.JudgementType judgement = JudgeManagerV2.Instance.Judge(deviceId, relativeTime);
 
-        // ゲーム中アイコンのエフェクト再生
+        // ゲーム中アイコンのエフェクト再生と判定表示
         if (int.TryParse(deviceId, out int index) && index >= 0 && index < deviceIcons.Count)
         {
             var icon = deviceIcons[index];
@@ -30,8 +27,8 @@ public class GamePlayHandler : ShakeHandlerBase
                 var deviceIcon = icon.GetComponent<DeviceIcon>();
                 if (deviceIcon != null)
                 {
-                    Debug.Log($"[GamePlayHandler] Calling OnShakeProcessed for index={index}");
-                    deviceIcon.OnShakeProcessed();
+                    Debug.Log($"[GamePlayHandler] Calling OnShakeProcessed for index={index}, judgement={judgement}");
+                    deviceIcon.OnShakeProcessed(judgement);
                 }
                 else
                 {
@@ -43,11 +40,5 @@ public class GamePlayHandler : ShakeHandlerBase
         {
             Debug.LogWarning($"[GamePlayHandler] No icon found for deviceId={deviceId}");
         }
-
-        // // 同期判定処理
-        // if (SyncDetector.Instance != null)
-        // {
-        //     SyncDetector.Instance.OnShakeInput(deviceId, timestamp);
-        // }
     }
 }

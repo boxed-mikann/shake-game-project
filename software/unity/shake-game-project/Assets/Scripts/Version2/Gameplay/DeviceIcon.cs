@@ -1,11 +1,12 @@
 using UnityEngine;
 using UnityEngine.UI;
 
-public class DeviceIcon : MonoBehaviour, IShakeable
+public class DeviceIcon : MonoBehaviour
 {
     private SpriteRenderer spriteRenderer;
     private Image uiImage;
     private GameObject hitEffectObject; // CFXR3 Hit Misc A（UI版では省略可）
+    private JudgePopup judgePopup; // 子オブジェクトの判定ポップアップ
     
     private string deviceId;
     
@@ -15,12 +16,27 @@ public class DeviceIcon : MonoBehaviour, IShakeable
         spriteRenderer = GetComponent<SpriteRenderer>();
         uiImage = GetComponent<Image>();
         
-        // エフェクトは子オブジェクトから取得（存在しない場合はnullのままでOK）
+        // 子オブジェクトから CFXR エフェクトと JudgePopup を取得
         if (transform.childCount > 0)
         {
-            hitEffectObject = transform.GetChild(0).gameObject; // CFXR3 Hit Misc A
-            //デバッグログ
-            Debug.Log("[DeviceIcon] Hit effect object found: " + hitEffectObject.name);
+            for (int i = 0; i < transform.childCount; i++)
+            {
+                var child = transform.GetChild(i).gameObject;
+                
+                // エフェクトを探す（ParticleSystem）
+                if (hitEffectObject == null && child.GetComponent<ParticleSystem>() != null)
+                {
+                    hitEffectObject = child;
+                    Debug.Log("[DeviceIcon] Hit effect object found: " + hitEffectObject.name);
+                }
+                
+                // JudgePopup を探す
+                if (judgePopup == null && child.GetComponent<JudgePopup>() != null)
+                {
+                    judgePopup = child.GetComponent<JudgePopup>();
+                    Debug.Log("[DeviceIcon] JudgePopup found: " + judgePopup.gameObject.name);
+                }
+            }
         }
     }
     
@@ -37,20 +53,18 @@ public class DeviceIcon : MonoBehaviour, IShakeable
             spriteRenderer.sprite = sprite;
             spriteRenderer.enabled = true;
         }
-        
-        // // エフェクトを初期化
-        // if (hitEffectObject != null)
-        // {
-        //     hitEffectObject.SetActive(false);
-        // }
     }
     
     public string GetDeviceId() => deviceId;
     
-    // ★ ShakeResolverV2から直接呼び出される
-    public void OnShakeProcessed()
+    /// <summary>
+    /// シェイク入力時に呼び出される - エフェクトと判定表示を実行
+    /// </summary>
+    /// <param name="judgement">判定タイプ</param>
+    public void OnShakeProcessed(JudgeManagerV2.JudgementType judgement = JudgeManagerV2.JudgementType.Good)
     {
         PlayHitEffect();
+        ShowJudgement(judgement);
     }
     
     private void PlayHitEffect()
@@ -65,13 +79,6 @@ public class DeviceIcon : MonoBehaviour, IShakeable
                 particleSystem.Stop();
                 particleSystem.Play();
             }
-            else
-            {
-                // ParticleSystem がない場合は SetActive で再生
-                Debug.Log("[DeviceIcon] No ParticleSystem found, using SetActive for deviceId: " + deviceId);
-                // hitEffectObject.SetActive(false);
-                // hitEffectObject.SetActive(true);
-            }
             return;
         }
         
@@ -83,6 +90,19 @@ public class DeviceIcon : MonoBehaviour, IShakeable
             // 簡易スケールアニメーション
             StopAllCoroutines();
             StartCoroutine(UIScalePunch((RectTransform)t));
+        }
+    }
+
+    private void ShowJudgement(JudgeManagerV2.JudgementType judgement)
+    {
+        if (judgePopup != null)
+        {
+            Debug.Log($"[DeviceIcon] Showing judgement popup: {judgement}");
+            judgePopup.Show(JudgeManagerV2.GetJudgementText(judgement));
+        }
+        else
+        {
+            Debug.LogWarning("[DeviceIcon] JudgePopup not found");
         }
     }
 
