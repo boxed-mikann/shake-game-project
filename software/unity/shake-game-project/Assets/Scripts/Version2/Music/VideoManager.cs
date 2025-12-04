@@ -13,7 +13,7 @@ public class VideoManager : MonoBehaviour
 
     [Header("Settings")] 
     [Tooltip("StreamingAssets からの相対パス。例: 'Videos/test_video.mp4'")]
-    [SerializeField] private string streamingRelativePath = "Videos/test_video.mp4";
+    [SerializeField] private string streamingRelativePath = "Videos/UTA Live.mp4";
     [SerializeField] private bool autoLoadOnStart = true;
 
     private bool isPrepared = false;
@@ -75,6 +75,8 @@ public class VideoManager : MonoBehaviour
         if (autoLoadOnStart)
         {
             LoadFromStreamingAssets(streamingRelativePath);
+            //パスをデバッグログ
+            Debug.Log($"[VideoManager] Loading video from StreamingAssets: {streamingRelativePath}");
             Prepare();
         }
     }

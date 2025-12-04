@@ -15,9 +15,13 @@ public class PhaseCanvasUIManager : MonoBehaviour
         // ゲームフェーズイベントを購読
         if (GameManagerV2.Instance != null)
         {
+            GameManagerV2.Instance.OnResisterStart -= OnResisterStart;
             GameManagerV2.Instance.OnResisterStart += OnResisterStart;
+            GameManagerV2.Instance.OnIdleStart -= OnIdleStart;
             GameManagerV2.Instance.OnIdleStart += OnIdleStart;
+            GameManagerV2.Instance.OnGameStart -= OnGameStart;
             GameManagerV2.Instance.OnGameStart += OnGameStart;
+            GameManagerV2.Instance.OnGameEnd -= OnGameEnd;
             GameManagerV2.Instance.OnGameEnd += OnGameEnd;
             //デバッグログ
             Debug.Log("[PhaseCanvasUIManager] Subscribed to game phase events.");
@@ -38,11 +42,41 @@ public class PhaseCanvasUIManager : MonoBehaviour
 
     private void Awake()
     {
-        // 初期状態として全キャンバスを非アクティブにする
-        if (resisterCanvas != null) resisterCanvas.gameObject.SetActive(false);
-        if (idleCanvas != null) idleCanvas.gameObject.SetActive(false);
-        if (GameCanvas != null) GameCanvas.gameObject.SetActive(false);
-        if (ResultCanvas != null) ResultCanvas.gameObject.SetActive(false);
+        // 初期状態では、GameMangagerV2のフェーズに応じてキャンバスを非アクティブにする
+        if (resisterCanvas != null) resisterCanvas.gameObject.SetActive(GameManagerV2.Instance.CurrentGameState == GameManagerV2.GameState.IdleRegister);
+        if (idleCanvas != null) idleCanvas.gameObject.SetActive(GameManagerV2.Instance.CurrentGameState == GameManagerV2.GameState.IdleStarting);
+        if (GameCanvas != null) GameCanvas.gameObject.SetActive(GameManagerV2.Instance.CurrentGameState == GameManagerV2.GameState.Game);
+        if (ResultCanvas != null) ResultCanvas.gameObject.SetActive(GameManagerV2.Instance.CurrentGameState == GameManagerV2.GameState.Result);
+        if (GameManagerV2.Instance != null)
+        {
+            GameManagerV2.Instance.OnResisterStart -= OnResisterStart;
+            GameManagerV2.Instance.OnResisterStart += OnResisterStart;
+            GameManagerV2.Instance.OnIdleStart -= OnIdleStart;
+            GameManagerV2.Instance.OnIdleStart += OnIdleStart;
+            GameManagerV2.Instance.OnGameStart -= OnGameStart;
+            GameManagerV2.Instance.OnGameStart += OnGameStart;
+            GameManagerV2.Instance.OnGameEnd -= OnGameEnd;
+            GameManagerV2.Instance.OnGameEnd += OnGameEnd;
+            //デバッグログ
+            Debug.Log("[PhaseCanvasUIManager] Subscribed to game phase events.");
+        }
+    }
+    private void Start()
+    {
+                // ゲームフェーズイベントを購読
+        if (GameManagerV2.Instance != null)
+        {
+            GameManagerV2.Instance.OnResisterStart -= OnResisterStart;
+            GameManagerV2.Instance.OnResisterStart += OnResisterStart;
+            GameManagerV2.Instance.OnIdleStart -= OnIdleStart;
+            GameManagerV2.Instance.OnIdleStart += OnIdleStart;
+            GameManagerV2.Instance.OnGameStart -= OnGameStart;
+            GameManagerV2.Instance.OnGameStart += OnGameStart;
+            GameManagerV2.Instance.OnGameEnd -= OnGameEnd;
+            GameManagerV2.Instance.OnGameEnd += OnGameEnd;
+            //デバッグログ
+            Debug.Log("[PhaseCanvasUIManager] Subscribed to game phase events.");
+        }
     }
     private void OnResisterStart()
     {
@@ -77,10 +111,6 @@ public class PhaseCanvasUIManager : MonoBehaviour
         ResultCanvas.gameObject.SetActive(true);
     }
     // Start is called before the first frame update
-    void Start()
-    {
-        
-    }
 
     // Update is called once per frame
     void Update()

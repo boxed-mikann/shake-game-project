@@ -91,7 +91,41 @@ public class DeviceIconManager : MonoBehaviour
         if (isGamePlayCanvas)
         {
             RegenerateAllIcons();
+            HideUnregisteredDeviceIcons();
         }
+    }
+    
+    /// <summary>
+    /// 未登録デバイスのアイコンを非表示にする
+    /// ゲーム開始時に呼び出される
+    /// </summary>
+    private void HideUnregisteredDeviceIcons()
+    {
+        if (DeviceRegisterManager.Instance == null)
+        {
+            Debug.LogWarning("[DeviceIconManager] DeviceRegisterManager instance not found!");
+            return;
+        }
+
+        // すべてのアイコンをチェックして、未登録のものを非表示にする
+        foreach (var kvp in activeIcons)
+        {
+            string deviceId = kvp.Key;
+            DeviceIcon icon = kvp.Value;
+            
+            if (icon != null && icon.gameObject != null)
+            {
+                bool isRegistered = DeviceRegisterManager.Instance.IsDeviceRegistered(deviceId);
+                icon.gameObject.SetActive(isRegistered);
+                
+                if (!isRegistered)
+                {
+                    Debug.Log($"[DeviceIconManager] Hidden unregistered device icon: {deviceId}");
+                }
+            }
+        }
+        
+        Debug.Log("[DeviceIconManager] Finished hiding unregistered device icons");
     }
     
     private void RegenerateAllIcons()
@@ -106,8 +140,18 @@ public class DeviceIconManager : MonoBehaviour
         }
         activeIcons.Clear();
         
-        // 登録済みデバイスのアイコンを再生成
-        if (DeviceManager.Instance != null)
+        // GamePlayCanvas用の場合は、DeviceRegisterManagerから登録済みデバイスを取得
+        if (isGamePlayCanvas && DeviceRegisterManager.Instance != null)
+        {
+            // 登録済みデバイスのみアイコンを生成
+            foreach (var deviceId in DeviceRegisterManager.Instance.RegisteredDevices)
+            {
+                OnDeviceRegistered(deviceId);
+            }
+            Debug.Log($"[DeviceIconManager] Regenerated {activeIcons.Count} registered device icons for gameplay");
+        }
+        // 通常のCanvas（IdleRegister用）の場合は、DeviceManagerから取得
+        else if (DeviceManager.Instance != null)
         {
             foreach (var device in DeviceManager.Instance.GetRegisteredDevices())
             {

@@ -2,25 +2,23 @@ using UnityEngine;
 
 /// <summary>
 /// IdleRegister 状態のシェイク処理
-/// - デバイスの登録処理を実行
-/// - 登録済みアイコンのエフェクト再生
+/// - DeviceRegisterManagerを使用したデバイス登録処理
+/// - 登録済みアイコンの透明度制御とエフェクト再生
 /// </summary>
 public class IdleRegisterHandler : ShakeHandlerBase
 {
-    [SerializeField] private DeviceIconManager idleIconManager;
-
     public override void HandleShake(string deviceId, double timestamp)
     {
-        Debug.Log($"[IdleRegisterHandler] ProcessRegistration for DeviceID={deviceId}");
+        Debug.Log($"[IdleRegisterHandler] Processing registration shake for DeviceID={deviceId}");
         
-        // デバイス登録処理
-        if (DeviceManager.Instance != null)
+        // DeviceRegisterManagerに登録処理を委譲
+        if (DeviceRegisterManager.Instance != null)
         {
-            DeviceManager.Instance.ProcessRegistration(deviceId, timestamp);
+            DeviceRegisterManager.Instance.ProcessShake(deviceId, timestamp);
         }
-
-        // 登録済みアイコンのエフェクト再生
-        var icon = idleIconManager?.GetDeviceIcon(deviceId);
-        icon?.OnShakeProcessed();
+        else
+        {
+            Debug.LogWarning("[IdleRegisterHandler] DeviceRegisterManager instance not found!");
+        }
     }
 }

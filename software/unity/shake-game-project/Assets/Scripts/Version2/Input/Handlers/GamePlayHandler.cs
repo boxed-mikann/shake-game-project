@@ -3,6 +3,7 @@ using System.Collections.Generic;
 
 /// <summary>
 /// Game（ゲーム進行中）状態のシェイク処理
+/// - 登録済みデバイスのみ処理
 /// - 判定処理
 /// - ゲーム中アイコンのエフェクト再生と判定表示
 /// </summary>
@@ -12,7 +13,21 @@ public class GamePlayHandler : ShakeHandlerBase
 
     public override void HandleShake(string deviceId, double timestamp)
     {
+        // 登録済みデバイスのみ処理
+        if (DeviceRegisterManager.Instance == null || 
+            !DeviceRegisterManager.Instance.IsDeviceRegistered(deviceId))
+        {
+            Debug.Log($"[GamePlayHandler] Device {deviceId} is not registered, ignoring shake");
+            return;
+        }
+
         Debug.Log($"[GamePlayHandler] Processing game shake for DeviceID={deviceId}");
+        
+        // 効果音を再生
+        if (SEManager.Instance != null)
+        {
+            SEManager.Instance.PlayShakeHit();
+        }
         
         int syncCount = 0;
         // シンクロ検出システムにシェイクタイミングを通知

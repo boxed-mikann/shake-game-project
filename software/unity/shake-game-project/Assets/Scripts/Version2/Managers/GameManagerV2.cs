@@ -24,6 +24,18 @@ public class GameManagerV2 : MonoBehaviour
 {
     public static GameManagerV2 Instance { get; private set; }
 
+    // ゲーム状態の定義
+    public enum GameState
+    {
+        IdleRegister,   // デバイス登録待機
+        IdleStarting,   // 全員登録確認待機
+        Game,           // ゲーム進行中
+        Result          // リザルト表示
+    }
+
+    // 現在のゲーム状態（外部から参照可能）
+    public GameState CurrentGameState { get; private set; } = GameState.IdleRegister;
+
     // イベント定義
     //public static UnityEvent OnShowTitle = new UnityEvent();よりも高速で安全らしい、ただし、インスペクタはやりにくい
     public event Action OnResisterStart;
@@ -56,7 +68,9 @@ public class GameManagerV2 : MonoBehaviour
 
     public void ShowResister()
     {
+        CurrentGameState = GameState.IdleRegister;
         OnResisterStart?.Invoke();
+        Debug.Log("[GameManagerV2] State changed to IdleRegister");
         //TODO イベント購読コーディング
         // TODO バック映像の再生をスタートをイベント駆動にする
         //消去if (VideoManager.Instance != null) VideoManager.Instance.PlayLoop();
@@ -64,22 +78,28 @@ public class GameManagerV2 : MonoBehaviour
 
     public void ShowIdle()
     {
+        CurrentGameState = GameState.IdleStarting;
         OnIdleStart?.Invoke();
+        Debug.Log("[GameManagerV2] State changed to IdleStarting");
         //TODO イベント購読コーディング
     }
 
     public void StartGame()
     {
+        CurrentGameState = GameState.Game;
         //TODO ビデオスタートもイベント駆動(でもって譜面が参照するゲームスタートタイミングはVideoを開始するところが記録して、他からアクセスできるようにする)
         //if (VideoManager.Instance != null) VideoManager.Instance.PlayFromStart();
         OnGameStart?.Invoke();
+        Debug.Log("[GameManagerV2] State changed to Game");
     }
 
     public void EndGame()
     {
+        CurrentGameState = GameState.Result;
         //TODO Canvasの操作はイベントを購読してUIマネがやる
         //SetCanvasState(idle: false, gameplay: false, result: true);
         OnGameEnd?.Invoke();
+        Debug.Log("[GameManagerV2] State changed to Result");
     }
 
     // public void EndGame()

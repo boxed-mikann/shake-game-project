@@ -10,7 +10,7 @@ public static class GameConstantsV2
     public const float VOLTAGE_MAX = 100f;
 
     // 動画（StreamingAssets 相対パス）
-    public const string VIDEO_RELATIVE_PATH = "Videos/test_video.mp4";
+    public const string VIDEO_RELATIVE_PATH = "Videos/UTA Live.mp4";
 
     // シリアル通信（SerialPortManagerV2 で使用）
     public const string SERIAL_PORT_NAME = "COM3";
