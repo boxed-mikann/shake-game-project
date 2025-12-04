@@ -34,21 +34,21 @@ public class SyncDetector : MonoBehaviour
     /// デバイスのシェイクタイミングを更新し、シンクロ判定を実施
     /// ShakeHandler等から呼び出される
     /// </summary>
-    public void UpdateDeviceShakeTime(string deviceId, double timestamp)
+    public int UpdateDeviceShakeTime(string deviceId, double timestamp)
     {
-        if (string.IsNullOrEmpty(deviceId)) return;
+        if (string.IsNullOrEmpty(deviceId)) return 0;
         
         // デバイスの最新シェイクタイミングを更新
         deviceLatestShakeTimes[deviceId] = timestamp;
         
         // 同期判定を実施
-        CheckSync(timestamp);
+        return CheckSync(timestamp);
     }
     
     /// <summary>
     /// 指定タイムスタンプから±syncWindowSize以内のシェイクを持つデバイス数を数える
     /// </summary>
-    private void CheckSync(double currentTimestamp)
+    private int CheckSync(double currentTimestamp)
     {
         int syncCount = 0;
         
@@ -72,6 +72,7 @@ public class SyncDetector : MonoBehaviour
                 Debug.Log($"[SyncDetector] シンクロ検出: Count={syncCount}, Time={currentTimestamp:F3}");
             }
         }
+        return syncCount;
     }
     
     /// <summary>

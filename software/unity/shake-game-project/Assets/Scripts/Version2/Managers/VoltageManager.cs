@@ -23,36 +23,37 @@ public class VoltageManager : MonoBehaviour
         Instance = this;
         DontDestroyOnLoad(this.gameObject);
     }
-    
-    //void OnEnable()
-    //{
-    //    if (SyncDetector.Instance != null)
-    //    {
-    //        SyncDetector.Instance.OnSyncDetected += ProcessSync;
-    //    }
-    //}
-    
-    //void OnDisable()
-    //{
-    //    if (SyncDetector.Instance != null)
-    //    {
-    //        SyncDetector.Instance.OnSyncDetected -= ProcessSync;
-    //    }
-    //}
-    
-    //private void ProcessSync(float syncRate, double timestamp)
-    //{
-    //    float phaseMultiplier = 1.0f; // TODO: PhaseManagerから取得（Phase 4）
-    //    AddVoltage(syncRate, phaseMultiplier);
-        
-    //    if (GameConstantsV2.DEBUG_MODE)
-    //    {
-    //        float bonus = Mathf.Pow(syncRate, 2f);
-    //        float increase = baseVoltagePerTick * phaseMultiplier * bonus;
-    //        Debug.Log($"[VoltageManager] Sync: {syncRate:P0} → +{increase:F1}V (Total: {currentVoltage:F1}V)");
-    //    }
-    //}
 
+    private void Start()
+    {
+        // ゲームフェーズイベントを購読
+        if (GameManagerV2.Instance != null)
+        {
+            GameManagerV2.Instance.OnResisterStart += ResetVoltage;
+            GameManagerV2.Instance.OnGameStart += ResetVoltage;
+            //デバッグログ
+            Debug.Log("[VoltageManager] Subscribed to game phase events.");
+        }
+    }
+    
+    private void OnEnable()
+    {
+        // ゲームフェーズイベントを購読
+        if (GameManagerV2.Instance != null)
+        {
+            GameManagerV2.Instance.OnResisterStart += ResetVoltage;
+            GameManagerV2.Instance.OnGameStart += ResetVoltage;
+        }
+    }
+    private void OnDisable()
+    {
+        // unsubscribe to avoid memory leaks
+        if (GameManagerV2.Instance != null)
+        {
+            GameManagerV2.Instance.OnResisterStart -= ResetVoltage;
+            GameManagerV2.Instance.OnGameStart -= ResetVoltage;
+        }
+    }
     public float CurrentVoltage => currentVoltage;
     public float MaxVoltage => maxVoltage;
     
@@ -71,5 +72,15 @@ public class VoltageManager : MonoBehaviour
         float increase = baseVoltagePerTick * phaseMultiplier * bonus;
         currentVoltage = Mathf.Clamp(currentVoltage + increase, 0f, maxVoltage);
         OnVoltageChanged?.Invoke(currentVoltage);
+    }
+    public void SimpleAddVoltage(float amount)
+    {
+        currentVoltage = Mathf.Clamp(currentVoltage + amount, 0f, maxVoltage);
+        OnVoltageChanged?.Invoke(currentVoltage);
+        // Debug log for voltage addition
+        if (GameConstantsV2.DEBUG_MODE)
+        {
+            Debug.Log($"[VoltageManager] SimpleAddVoltage: +{amount:F1}V (Total: {currentVoltage:F1}V)");
+        }
     }
 }
