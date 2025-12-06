@@ -45,11 +45,16 @@ public class GamePlayHandler : ShakeHandlerBase
         {
             syncCount = SyncDetector.Instance.UpdateDeviceShakeTime(deviceId, timestamp);
         }
-        //voltage加算
-        VoltageManager.Instance.SimpleAddVoltage(1 * syncCount);
+        
         // 判定処理 - ゲーム開始からの相対時間を計算
         double relativeTime = VideoManager.Instance.GetMusicTime(); // TODO: VideoManager.GetCurrentTime() を使用
         JudgeManagerV2.JudgementType judgement = JudgeManagerV2.Instance.Judge(deviceId, relativeTime);
+
+        // voltage加算（判定結果とシンクロ人数を考慮）
+        if (VoltageManager.Instance != null)
+        {
+            VoltageManager.Instance.SimpleAddVoltage(judgement, syncCount);
+        }
 
         // 判定結果を記録
         if (JudgeRecorder.Instance != null)

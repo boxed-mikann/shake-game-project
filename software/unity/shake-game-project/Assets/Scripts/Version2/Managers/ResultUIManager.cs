@@ -145,6 +145,13 @@ public class ResultUIManager : MonoBehaviour
             uiTemplate.messageText.color = rankConfig.rankColor;
         }
 
+        // ウタのメッセージも表示（Result画面が終わるまで無期限表示）
+        if (UtaMessage.Instance != null)
+        {
+            UtaMessage.Instance.ShowMessage(rankConfig.message);
+            Debug.Log($"[ResultUIManager] Showing result message via UtaMessage: {rankConfig.message}");
+        }
+
         // Voltage値表示
         if (uiTemplate.voltageText != null)
         {

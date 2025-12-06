@@ -364,4 +364,5 @@ public class DeviceRegisterManager : MonoBehaviour
         
         // Debug.Log("[DeviceRegisterManager] All registrations reset");
     }
+
 }

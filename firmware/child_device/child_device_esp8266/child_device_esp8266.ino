@@ -18,7 +18,7 @@ int16_t AcX, AcY, AcZ;
 int shakeCount = 0;
 bool isShaking = false;
 
-#define CHILD_ID 2
+#define CHILD_ID 5
 uint8_t parentMAC[] = {0x08, 0x3A, 0xF2, 0x52, 0x9E, 0x54};
 
 // ★ ベクトル内積判定用（シェイク状態時のみ使用）
