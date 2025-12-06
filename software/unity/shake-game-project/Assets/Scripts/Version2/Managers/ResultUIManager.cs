@@ -48,6 +48,12 @@ public class UITemplate
     public TextMeshProUGUI rankText;
     public TextMeshProUGUI messageText;
     public TextMeshProUGUI voltageText;
+
+    [Header("判定回数表示")]
+    public TextMeshProUGUI perfectCountText;
+    public TextMeshProUGUI goodCountText;
+    public TextMeshProUGUI badCountText;
+    public TextMeshProUGUI missCountText;
 }
 
 public class ResultUIManager : MonoBehaviour
@@ -67,6 +73,8 @@ public class ResultUIManager : MonoBehaviour
 
     [Header("表示フォーマット")]
     [SerializeField] private string voltageFormat = "Voltage: {0:F1}V / {1:F1}V";
+    [SerializeField] private string judgeCountFormat = "{0}";
+    [SerializeField] private string judgeCountLabelFormat = "Perfect: {0}\nGood: {1}\nBad: {2}";
 
     private void Start()
     {
@@ -142,6 +150,9 @@ public class ResultUIManager : MonoBehaviour
         {
             uiTemplate.voltageText.text = string.Format(voltageFormat, currentVoltage, maxVoltage);
         }
+
+        // 判定回数表示
+        DisplayJudgeCounts();
     }
 
     /// <summary>
@@ -178,5 +189,52 @@ public class ResultUIManager : MonoBehaviour
     public void SetVoltageFormat(string format)
     {
         voltageFormat = format;
+    }
+
+    /// <summary>
+    /// 判定回数を表示
+    /// JudgeRecorderからデータを取得して各TMPに表示
+    /// </summary>
+    private void DisplayJudgeCounts()
+    {
+        if (JudgeRecorder.Instance == null)
+        {
+            Debug.LogWarning("[ResultUIManager] JudgeRecorder.Instance is null!");
+            return;
+        }
+
+        int perfectCount = JudgeRecorder.Instance.PerfectCount;
+        int goodCount = JudgeRecorder.Instance.GoodCount;
+        int badCount = JudgeRecorder.Instance.BadCount;
+        int missCount = JudgeRecorder.Instance.MissCount;
+
+        // Perfect回数表示
+        if (uiTemplate.perfectCountText != null)
+        {
+            uiTemplate.perfectCountText.text = string.Format(judgeCountFormat, perfectCount);
+        }
+
+        // Good回数表示
+        if (uiTemplate.goodCountText != null)
+        {
+            uiTemplate.goodCountText.text = string.Format(judgeCountFormat, goodCount);
+        }
+
+        // Bad回数表示
+        if (uiTemplate.badCountText != null)
+        {
+            uiTemplate.badCountText.text = string.Format(judgeCountFormat, badCount);
+        }
+
+        // Miss回数表示
+        if (uiTemplate.missCountText != null)
+        {
+            uiTemplate.missCountText.text = string.Format(judgeCountFormat, missCount);
+        }
+
+        if (GameConstantsV2.DEBUG_MODE)
+        {
+            Debug.Log($"[ResultUIManager] Judge counts displayed - Perfect: {perfectCount}, Good: {goodCount}, Bad: {badCount}, Miss: {missCount}");
+        }
     }
 }

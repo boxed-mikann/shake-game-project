@@ -35,35 +35,80 @@ public class ShakeResolverV2 : MonoBehaviour
         _currentHandler = idleRegisterHandler;
     }
 
+    private System.Action onResisterStartAction;
+    private System.Action onIdleStartAction;
+    private System.Action onGameStartAction;
+    private System.Action onGameEndAction;
+    
     private void Start()
     {
-        // GameManagerV2 イベント購読で状態遷移時にハンドラーを切り替え
+        SubscribeToEvents();
+    }
+    
+    private void OnEnable()
+    {
+        SubscribeToEvents();
+    }
+    
+    private void OnDisable()
+    {
+        if (GameManagerV2.Instance != null && onResisterStartAction != null)
+        {
+            GameManagerV2.Instance.OnResisterStart -= onResisterStartAction;
+            GameManagerV2.Instance.OnIdleStart -= onIdleStartAction;
+            GameManagerV2.Instance.OnGameStart -= onGameStartAction;
+            GameManagerV2.Instance.OnGameEnd -= onGameEndAction;
+        }
+    }
+    
+    private void SubscribeToEvents()
+    {
         if (GameManagerV2.Instance != null)
         {
-            GameManagerV2.Instance.OnResisterStart += () =>
+            // ラムダ式をフィールドに保存して重複購読を防ぐ
+            if (onResisterStartAction == null)
             {
-                Debug.Log("[ShakeResolverV2] State changed to IdleRegister");
-                _currentHandler = idleRegisterHandler;
-            };
-
-            GameManagerV2.Instance.OnIdleStart += () =>
+                onResisterStartAction = () =>
+                {
+                    Debug.Log("[ShakeResolverV2] State changed to IdleRegister");
+                    _currentHandler = idleRegisterHandler;
+                };
+            }
+            if (onIdleStartAction == null)
             {
-                Debug.Log("[ShakeResolverV2] State changed to IdleStarting");
-                _currentHandler = idleStartingHandler;
-            };
-
-            GameManagerV2.Instance.OnGameStart += () =>
+                onIdleStartAction = () =>
+                {
+                    Debug.Log("[ShakeResolverV2] State changed to IdleStarting");
+                    _currentHandler = idleStartingHandler;
+                };
+            }
+            if (onGameStartAction == null)
             {
-                Debug.Log("[ShakeResolverV2] State changed to Game");
-                _currentHandler = gamePlayHandler;
-            };
-
-            GameManagerV2.Instance.OnGameEnd += () =>
+                onGameStartAction = () =>
+                {
+                    Debug.Log("[ShakeResolverV2] State changed to Game");
+                    _currentHandler = gamePlayHandler;
+                };
+            }
+            if (onGameEndAction == null)
             {
-                Debug.Log("[ShakeResolverV2] State changed to Result (no handler)");
-                // Result状態では特に処理しない
-                _currentHandler = null;
-            };
+                onGameEndAction = () =>
+                {
+                    Debug.Log("[ShakeResolverV2] State changed to Result (no handler)");
+                    // Result状態では特に処理しない
+                    _currentHandler = null;
+                };
+            }
+            
+            // 重複購読を避けるため、一度解除してから購読
+            GameManagerV2.Instance.OnResisterStart -= onResisterStartAction;
+            GameManagerV2.Instance.OnResisterStart += onResisterStartAction;
+            GameManagerV2.Instance.OnIdleStart -= onIdleStartAction;
+            GameManagerV2.Instance.OnIdleStart += onIdleStartAction;
+            GameManagerV2.Instance.OnGameStart -= onGameStartAction;
+            GameManagerV2.Instance.OnGameStart += onGameStartAction;
+            GameManagerV2.Instance.OnGameEnd -= onGameEndAction;
+            GameManagerV2.Instance.OnGameEnd += onGameEndAction;
         }
         else
         {

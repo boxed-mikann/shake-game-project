@@ -23,33 +23,14 @@ public class TimerUI : MonoBehaviour
     private StringBuilder sb = new StringBuilder(4);
 
 
-    private void OnEnable()
-    {
-        if (GameManagerV2.Instance != null)
-        {
-            GameManagerV2.Instance.OnGameStart += StartTimer;
-            GameManagerV2.Instance.OnGameEnd += StopTimer;
-            //デバッグログ
-            Debug.Log("[TimerUI] Subscribed to GameManagerV2 game phase events.");
-        }
-        else
-        {
-            Debug.Log("[TimerUI] not Subscribed to GameManagerV2 game phase events.");
-        }
-    }
     private void Start()
     {
-        if (GameManagerV2.Instance != null)
-        {
-            GameManagerV2.Instance.OnGameStart += StartTimer;
-            GameManagerV2.Instance.OnGameEnd += StopTimer;
-            //デバッグログ
-            Debug.Log("[TimerUI] Subscribed to GameManagerV2 game phase events.");
-        }
-        else
-        {
-            Debug.Log("[TimerUI] not Subscribed to GameManagerV2 game phase events.");
-        }
+        SubscribeToEvents();
+    }
+    
+    private void OnEnable()
+    {
+        SubscribeToEvents();
     }
 
     private void OnDisable()
@@ -58,6 +39,23 @@ public class TimerUI : MonoBehaviour
         {
             GameManagerV2.Instance.OnGameStart -= StartTimer;
             GameManagerV2.Instance.OnGameEnd -= StopTimer;
+        }
+    }
+    
+    private void SubscribeToEvents()
+    {
+        if (GameManagerV2.Instance != null)
+        {
+            // 重複購読を避けるため、一度解除してから購読
+            GameManagerV2.Instance.OnGameStart -= StartTimer;
+            GameManagerV2.Instance.OnGameStart += StartTimer;
+            GameManagerV2.Instance.OnGameEnd -= StopTimer;
+            GameManagerV2.Instance.OnGameEnd += StopTimer;
+            Debug.Log("[TimerUI] Subscribed to GameManagerV2 game phase events.");
+        }
+        else
+        {
+            Debug.Log("[TimerUI] not Subscribed to GameManagerV2 game phase events.");
         }
     }
 

@@ -27,24 +27,15 @@ public class VoltageManager : MonoBehaviour
     private void Start()
     {
         // ゲームフェーズイベントを購読
-        if (GameManagerV2.Instance != null)
-        {
-            GameManagerV2.Instance.OnResisterStart += ResetVoltage;
-            GameManagerV2.Instance.OnGameStart += ResetVoltage;
-            //デバッグログ
-            Debug.Log("[VoltageManager] Subscribed to game phase events.");
-        }
+        SubscribeToEvents();
     }
     
     private void OnEnable()
     {
         // ゲームフェーズイベントを購読
-        if (GameManagerV2.Instance != null)
-        {
-            GameManagerV2.Instance.OnResisterStart += ResetVoltage;
-            GameManagerV2.Instance.OnGameStart += ResetVoltage;
-        }
+        SubscribeToEvents();
     }
+    
     private void OnDisable()
     {
         // unsubscribe to avoid memory leaks
@@ -52,6 +43,19 @@ public class VoltageManager : MonoBehaviour
         {
             GameManagerV2.Instance.OnResisterStart -= ResetVoltage;
             GameManagerV2.Instance.OnGameStart -= ResetVoltage;
+        }
+    }
+    
+    private void SubscribeToEvents()
+    {
+        if (GameManagerV2.Instance != null)
+        {
+            // 重複購読を避けるため、一度解除してから購読
+            GameManagerV2.Instance.OnResisterStart -= ResetVoltage;
+            GameManagerV2.Instance.OnResisterStart += ResetVoltage;
+            GameManagerV2.Instance.OnGameStart -= ResetVoltage;
+            GameManagerV2.Instance.OnGameStart += ResetVoltage;
+            Debug.Log("[VoltageManager] Subscribed to game phase events.");
         }
     }
     public float CurrentVoltage => currentVoltage;

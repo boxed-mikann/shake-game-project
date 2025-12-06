@@ -10,22 +10,27 @@ public class PhaseCanvasUIManager : MonoBehaviour
     [SerializeField] private Canvas GameCanvas;
     [SerializeField] private Canvas ResultCanvas;
     
-    private void OnEnable()
+    private void Awake()
     {
-        // ゲームフェーズイベントを購読
+        // 初期状態では、GameManagerV2のフェーズに応じてキャンバスを非アクティブにする
         if (GameManagerV2.Instance != null)
         {
-            GameManagerV2.Instance.OnResisterStart -= OnResisterStart;
-            GameManagerV2.Instance.OnResisterStart += OnResisterStart;
-            GameManagerV2.Instance.OnIdleStart -= OnIdleStart;
-            GameManagerV2.Instance.OnIdleStart += OnIdleStart;
-            GameManagerV2.Instance.OnGameStart -= OnGameStart;
-            GameManagerV2.Instance.OnGameStart += OnGameStart;
-            GameManagerV2.Instance.OnGameEnd -= OnGameEnd;
-            GameManagerV2.Instance.OnGameEnd += OnGameEnd;
-            //デバッグログ
-            Debug.Log("[PhaseCanvasUIManager] Subscribed to game phase events.");
+            if (resisterCanvas != null) resisterCanvas.gameObject.SetActive(GameManagerV2.Instance.CurrentGameState == GameManagerV2.GameState.IdleRegister);
+            if (idleCanvas != null) idleCanvas.gameObject.SetActive(GameManagerV2.Instance.CurrentGameState == GameManagerV2.GameState.IdleStarting);
+            if (GameCanvas != null) GameCanvas.gameObject.SetActive(GameManagerV2.Instance.CurrentGameState == GameManagerV2.GameState.Game);
+            if (ResultCanvas != null) ResultCanvas.gameObject.SetActive(GameManagerV2.Instance.CurrentGameState == GameManagerV2.GameState.Result);
         }
+        SubscribeToEvents();
+    }
+    
+    private void Start()
+    {
+        SubscribeToEvents();
+    }
+    
+    private void OnEnable()
+    {
+        SubscribeToEvents();
     }
 
     private void OnDisable()
@@ -39,16 +44,12 @@ public class PhaseCanvasUIManager : MonoBehaviour
             GameManagerV2.Instance.OnGameEnd -= OnGameEnd;
         }
     }
-
-    private void Awake()
+    
+    private void SubscribeToEvents()
     {
-        // 初期状態では、GameMangagerV2のフェーズに応じてキャンバスを非アクティブにする
-        if (resisterCanvas != null) resisterCanvas.gameObject.SetActive(GameManagerV2.Instance.CurrentGameState == GameManagerV2.GameState.IdleRegister);
-        if (idleCanvas != null) idleCanvas.gameObject.SetActive(GameManagerV2.Instance.CurrentGameState == GameManagerV2.GameState.IdleStarting);
-        if (GameCanvas != null) GameCanvas.gameObject.SetActive(GameManagerV2.Instance.CurrentGameState == GameManagerV2.GameState.Game);
-        if (ResultCanvas != null) ResultCanvas.gameObject.SetActive(GameManagerV2.Instance.CurrentGameState == GameManagerV2.GameState.Result);
         if (GameManagerV2.Instance != null)
         {
+            // 重複購読を避けるため、一度解除してから購読
             GameManagerV2.Instance.OnResisterStart -= OnResisterStart;
             GameManagerV2.Instance.OnResisterStart += OnResisterStart;
             GameManagerV2.Instance.OnIdleStart -= OnIdleStart;
@@ -57,24 +58,6 @@ public class PhaseCanvasUIManager : MonoBehaviour
             GameManagerV2.Instance.OnGameStart += OnGameStart;
             GameManagerV2.Instance.OnGameEnd -= OnGameEnd;
             GameManagerV2.Instance.OnGameEnd += OnGameEnd;
-            //デバッグログ
-            Debug.Log("[PhaseCanvasUIManager] Subscribed to game phase events.");
-        }
-    }
-    private void Start()
-    {
-                // ゲームフェーズイベントを購読
-        if (GameManagerV2.Instance != null)
-        {
-            GameManagerV2.Instance.OnResisterStart -= OnResisterStart;
-            GameManagerV2.Instance.OnResisterStart += OnResisterStart;
-            GameManagerV2.Instance.OnIdleStart -= OnIdleStart;
-            GameManagerV2.Instance.OnIdleStart += OnIdleStart;
-            GameManagerV2.Instance.OnGameStart -= OnGameStart;
-            GameManagerV2.Instance.OnGameStart += OnGameStart;
-            GameManagerV2.Instance.OnGameEnd -= OnGameEnd;
-            GameManagerV2.Instance.OnGameEnd += OnGameEnd;
-            //デバッグログ
             Debug.Log("[PhaseCanvasUIManager] Subscribed to game phase events.");
         }
     }

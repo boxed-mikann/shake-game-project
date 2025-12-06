@@ -20,18 +20,16 @@ public class VideoManager : MonoBehaviour
 
     public VideoPlayer Player => videoPlayer;
     //ゲーム開始タイミングを記録する変数
-    private float gameStartTime;
+    private double gameStartTime = -1.0; // -1は未初期化を示す
 
+    private void Start()
+    {
+        SubscribeToEvents();
+    }
+    
     private void OnEnable()
     {
-        // ゲームフェーズイベントを購読
-        if (GameManagerV2.Instance != null)
-        {
-            //GameManagerV2.Instance.OnResisterStart += OnResisterStart;
-            //GameManagerV2.Instance.OnIdleStart += OnIdleStart;
-            GameManagerV2.Instance.OnGameStart += OnGameStart;
-            //GameManagerV2.Instance.OnGameEnd += OnGameEnd;
-        }
+        SubscribeToEvents();
     }
 
     private void OnDisable()
@@ -43,6 +41,16 @@ public class VideoManager : MonoBehaviour
             //GameManagerV2.Instance.OnIdleStart -= OnIdleStart;
             GameManagerV2.Instance.OnGameStart -= OnGameStart;
             //GameManagerV2.Instance.OnGameEnd -= OnGameEnd;
+        }
+    }
+    
+    private void SubscribeToEvents()
+    {
+        if (GameManagerV2.Instance != null)
+        {
+            // 重複購読を避けるため、一度解除してから購読
+            GameManagerV2.Instance.OnGameStart -= OnGameStart;
+            GameManagerV2.Instance.OnGameStart += OnGameStart;
         }
     }
 
@@ -64,9 +72,10 @@ public class VideoManager : MonoBehaviour
         }
 
         HookPlayerEvents();
+        LoadVideo();
     }
 
-    private void Start()
+    private void LoadVideo()
     {
         // // GameConstantsV2 に定義があれば優先
         // if (!string.IsNullOrEmpty(GameConstantsV2VideoPath))
@@ -156,6 +165,13 @@ public class VideoManager : MonoBehaviour
     {
         if (videoPlayer == null) return;
         videoPlayer.isLooping = true;//false;TODO ずっとループで、ゲーム開始時にかいしりせっとだけということにしようかな
+        
+        // 既に再生中の場合は一旦停止してから巻き戻す
+        if (videoPlayer.isPlaying)
+        {
+            videoPlayer.Stop();
+        }
+        
         if (!isPrepared)
         {
             Prepare();
@@ -186,44 +202,53 @@ public class VideoManager : MonoBehaviour
     private void VideoPlay()
     {
         if (videoPlayer == null) return;
+        
+        // 念のため時刻を0にリセット
+        videoPlayer.time = 0;
         videoPlayer.Play();
-        gameStartTime = (float)AudioSettings.dspTime - (float)videoPlayer.time;
+        // dspTimeベースで正確にゲーム開始時刻を記録
+        gameStartTime = AudioSettings.dspTime;
+        ResetRag(); // ラグをリセットしておく
+        Debug.Log($"[VideoManager] VideoPlay called: gameStartTime={gameStartTime:F6}, dspTime={AudioSettings.dspTime:F6}, videoTime={videoPlayer.time:F6}");
     }
 
-    // 音楽時刻（dspTimeベース）。音楽時刻はVideoManagerが管理することとする。
-    public float GetMusicTime()
+    // 音楽時刻(dspTimeベース)。音楽時刻はVideoManagerが管理することとする。
+    public double GetMusicTime()
     {
-        return (float)(AudioSettings.dspTime - gameStartTime);
+        // gameStartTimeが未初期化(-1)の場合は0を返す
+        if (gameStartTime < 0.0) return 0.0;
+        return AudioSettings.dspTime - gameStartTime;
     }
 
     // 参考: 実動画時間（同期検証やデバッグ用）
-    public float GetVideoTime()
+    public double GetVideoTime()
     {
-        return videoPlayer != null ? (float)videoPlayer.time : 0f;
+        return videoPlayer != null ? videoPlayer.time : 0.0;
     }
     //同期検証用
-    public float GetLag()
+    public double GetLag()
     {
-        if (videoPlayer == null) return 0f;
-        float videoTime = (float)videoPlayer.time;
-        float musicTime = (float)(AudioSettings.dspTime - gameStartTime);
+        if (videoPlayer == null) return 0.0;
+        double videoTime = videoPlayer.time;
+        double musicTime = AudioSettings.dspTime - gameStartTime;
         return musicTime - videoTime;
     }
     //ラグリセット用,dspTimeベースの曲内時間とvideoPlayer.timeがずれたなら、デバッグログを出してgameStartTimeを調整する
-    public float ResetRag()
+    public double ResetRag()
     {
-        if (videoPlayer == null) return 0f;
-        float videoTime = (float)videoPlayer.time;
-        float musicTime = (float)(AudioSettings.dspTime - gameStartTime);
-        float lag = musicTime - videoTime;
-        Debug.LogWarning($"[VideoManager] ResetRag: videoTime={videoTime:F3}, musicTime={musicTime:F3}, lag={lag:F3}");
+        if (videoPlayer == null) return 0.0;
+        double videoTime = videoPlayer.time;
+        double musicTime = AudioSettings.dspTime - gameStartTime;
+        double lag = musicTime - videoTime;
+        Debug.LogWarning($"[VideoManager] ResetRag: videoTime={videoTime:F6}, musicTime={musicTime:F6}, lag={lag:F6}");
         //gameStartTimeを調整してラグをリセット
-        gameStartTime = (float)AudioSettings.dspTime - videoTime;
+        gameStartTime = AudioSettings.dspTime - videoTime;
         return lag;
     }
 
     private void OnGameStart()
     {
+        Debug.Log("[VideoManager] OnGameStart called");
         PlayFromStart();
     }
 
@@ -234,11 +259,17 @@ public class VideoManager : MonoBehaviour
         // デバッグ用: 動画時間と音楽時間のずれが大きい場合に警告を表示
         if (isPrepared && videoPlayer.isPlaying)
         {
-            float lag = GetLag();
-            if (Mathf.Abs(lag) > 0.5f)
+            double lag = GetLag();
+            if (System.Math.Abs(lag) > 0.01)
             {
-                //Debug.LogWarning($"[VideoManager] Large lag detected: {lag:F3} seconds.");
+                //Debug.LogWarning($"[VideoManager] Large lag detected: {lag:F6} seconds.");
+            }
+            if (System.Math.Abs(lag) > 0.03)
+            {
+                ResetRag();
+                Debug.LogWarning($"[VideoManager] Lag exceeded 30ms, resetting rag.");
             }
         }
+
     }
 }

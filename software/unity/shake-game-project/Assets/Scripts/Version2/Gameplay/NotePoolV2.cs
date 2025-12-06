@@ -2,8 +2,8 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// ノーツのオブジェクトプール
-/// Version1のNotePoolを参考に実装
+/// 単ノーツのオブジェクトプール
+/// 軽量化のためプール機構を採用
 /// </summary>
 public class NotePoolV2 : MonoBehaviour
 {
@@ -15,6 +15,7 @@ public class NotePoolV2 : MonoBehaviour
     [SerializeField] private int initialPoolSize = 50;
     
     private Queue<GameObject> notePool = new Queue<GameObject>();
+    private List<GameObject> activeNotes = new List<GameObject>();
     
     void Awake()
     {
@@ -65,6 +66,7 @@ public class NotePoolV2 : MonoBehaviour
             }
         }
         
+        activeNotes.Add(note);
         note.SetActive(true);
         return note;
     }
@@ -73,6 +75,7 @@ public class NotePoolV2 : MonoBehaviour
     {
         if (note == null) return;
         
+        activeNotes.Remove(note);
         note.SetActive(false);
         note.transform.SetParent(poolContainer);
         notePool.Enqueue(note);
@@ -80,11 +83,17 @@ public class NotePoolV2 : MonoBehaviour
     
     public void ClearAllNotes()
     {
-        // 画面上の全ノーツを回収
-        NoteV2[] activeNotes = FindObjectsOfType<NoteV2>();
-        foreach (var note in activeNotes)
+        // アクティブなノーツを全て回収
+        for (int i = activeNotes.Count - 1; i >= 0; i--)
         {
-            ReturnNote(note.gameObject);
+            if (activeNotes[i] != null)
+            {
+                ReturnNote(activeNotes[i]);
+            }
         }
+        activeNotes.Clear();
     }
+    
+    public int GetActiveCount() => activeNotes.Count;
+    public int GetPoolCount() => notePool.Count;
 }

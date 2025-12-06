@@ -42,6 +42,9 @@ public class GameManagerV2 : MonoBehaviour
     public event Action OnIdleStart;
     public event Action OnGameStart;
     public event Action OnGameEnd;
+    
+    // ゲームが開始されているか
+    public bool IsGameStarted => CurrentGameState == GameState.Game;
 
 
     //Unityで呼ばれる関数、Awake Start
@@ -64,10 +67,55 @@ public class GameManagerV2 : MonoBehaviour
         Debug.Log("[GameManagerV2] GameManagerV2 started and showing Resister phase.");
     }
 
+    private void Update()
+    {
+        // デバッグ用：Enterキーでフェーズ遷移
+        if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
+        {
+            HandleDebugPhaseTransition();
+        }
+    }
+
+    /// <summary>
+    /// デバッグ用：Enterキー押下時のフェーズ遷移処理
+    /// IdleRegister → IdleStarting
+    /// IdleStarting → Game
+    /// Result → IdleRegister
+    /// </summary>
+    private void HandleDebugPhaseTransition()
+    {
+        switch (CurrentGameState)
+        {
+            case GameState.IdleRegister:
+                Debug.Log("[GameManagerV2] [DEBUG] Enter pressed: IdleRegister → IdleStarting");
+                ShowIdle();
+                break;
+            
+            case GameState.IdleStarting:
+                Debug.Log("[GameManagerV2] [DEBUG] Enter pressed: IdleStarting → Game");
+                StartGame();
+                break;
+            
+            case GameState.Result:
+                Debug.Log("[GameManagerV2] [DEBUG] Enter pressed: Result → IdleRegister");
+                ShowResister();
+                break;
+            
+            case GameState.Game:
+                Debug.Log("[GameManagerV2] [DEBUG] Enter pressed during Game (no action)");
+                break;
+        }
+    }
+
     //-------------------
 
     public void ShowResister()
     {
+        if (CurrentGameState == GameState.IdleRegister)
+        {
+            Debug.Log("[GameManagerV2] Already in IdleRegister state, skipping event");
+            return;
+        }
         CurrentGameState = GameState.IdleRegister;
         OnResisterStart?.Invoke();
         Debug.Log("[GameManagerV2] State changed to IdleRegister");
@@ -78,6 +126,11 @@ public class GameManagerV2 : MonoBehaviour
 
     public void ShowIdle()
     {
+        if (CurrentGameState == GameState.IdleStarting)
+        {
+            Debug.Log("[GameManagerV2] Already in IdleStarting state, skipping event");
+            return;
+        }
         CurrentGameState = GameState.IdleStarting;
         OnIdleStart?.Invoke();
         Debug.Log("[GameManagerV2] State changed to IdleStarting");
@@ -86,15 +139,23 @@ public class GameManagerV2 : MonoBehaviour
 
     public void StartGame()
     {
+        if (CurrentGameState == GameState.Game)
+        {
+            Debug.Log("[GameManagerV2] Already in Game state, skipping event");
+            return;
+        }
         CurrentGameState = GameState.Game;
-        //TODO ビデオスタートもイベント駆動(でもって譜面が参照するゲームスタートタイミングはVideoを開始するところが記録して、他からアクセスできるようにする)
-        //if (VideoManager.Instance != null) VideoManager.Instance.PlayFromStart();
         OnGameStart?.Invoke();
         Debug.Log("[GameManagerV2] State changed to Game");
     }
 
     public void EndGame()
     {
+        if (CurrentGameState == GameState.Result)
+        {
+            Debug.Log("[GameManagerV2] Already in Result state, skipping event");
+            return;
+        }
         CurrentGameState = GameState.Result;
         //TODO Canvasの操作はイベントを購読してUIマネがやる
         //SetCanvasState(idle: false, gameplay: false, result: true);
@@ -114,17 +175,18 @@ public class GameManagerV2 : MonoBehaviour
     //     if (resultCanvas != null) resultCanvas.gameObject.SetActive(result);
     // }
 
-//TODO どこかに移譲する
-    // public float GetMusicTime()
-    // {
-    //     if (!IsGameStarted) return 0f;
-    //     return (float)(AudioSettings.dspTime - gameStartDspTime);
-    // }
-
-    // public float GetRelativeTime(double absoluteDspTime)
-    // {
-    //     return (float)(absoluteDspTime - gameStartDspTime);
-    // }
-
-    // public double GetGameStartDspTime() => gameStartDspTime;
+    /// <summary>
+    /// ゲーム開始からの経過時間を取得（音楽時刻）
+    /// VideoManagerに委譲
+    /// </summary>
+    public double GetMusicTime()
+    {
+        if (!IsGameStarted) return 0.0;
+        if (VideoManager.Instance != null)
+        {
+            return VideoManager.Instance.GetMusicTime();
+        }
+        Debug.LogWarning("[GameManagerV2] VideoManager not found, returning 0");
+        return 0.0;
+    }
 }
