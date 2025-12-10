@@ -92,8 +92,18 @@ public class GameManagerV2 : MonoBehaviour
                 break;
             
             case GameState.IdleStarting:
-                Debug.Log("[GameManagerV2] [DEBUG] Enter pressed: IdleStarting → Game");
-                StartGame();
+                Debug.Log("[GameManagerV2] [DEBUG] Enter pressed: IdleStarting → Game (via SongSelectionManager)");
+                // 直接StartGame()を呼ぶと、選曲ロジック（譜面ロードなど）がスキップされるため、
+                // SongSelectionManager経由で開始する
+                if (SongSelectionManager.Instance != null)
+                {
+                    SongSelectionManager.Instance.DecideSongForce();
+                }
+                else
+                {
+                    Debug.LogWarning("[GameManagerV2] SongSelectionManager not found, starting game directly (might have no chart loaded)");
+                    StartGame();
+                }
                 break;
             
             case GameState.Result:
@@ -188,5 +198,14 @@ public class GameManagerV2 : MonoBehaviour
         }
         Debug.LogWarning("[GameManagerV2] VideoManager not found, returning 0");
         return 0.0;
+    }
+
+    /// <summary>
+    /// 強制的にリザルト画面へ遷移（デバッグ用）
+    /// </summary>
+    public void ForceSkipToResult()
+    {
+        Debug.Log("[GameManagerV2] Force Skip To Result Requested");
+        EndGame();
     }
 }

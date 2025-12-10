@@ -41,6 +41,12 @@ public class IdleStartingHandler : ShakeHandlerBase
             IdleStartingDeviceIconManager.Instance.PlayShakeEffect(deviceId);
         }
 
+        // 選曲マネージャーへエネルギーを送る
+        if (SongSelectionManager.Instance != null)
+        {
+            SongSelectionManager.Instance.AddShakeEnergy(1.0f);
+        }
+
         // SyncDetectorにシェイクタイミングを通知
         int syncCount = 0;
         if (SyncDetector.Instance != null)
@@ -48,7 +54,9 @@ public class IdleStartingHandler : ShakeHandlerBase
             syncCount = SyncDetector.Instance.UpdateDeviceShakeTime(deviceId, timestamp);
         }
 
-        // 登録デバイス数に達したらゲーム開始
+        // 旧ロジック: 登録デバイス数に達したらゲーム開始
+        // SongSelectionManager側で決定ロジックを持つため、こちらは無効化
+        /*
         int registeredDeviceCount = DeviceRegisterManager.Instance.RegisteredDeviceCount;
         if (syncCount >= registeredDeviceCount && registeredDeviceCount > 0)
         {
@@ -62,5 +70,6 @@ public class IdleStartingHandler : ShakeHandlerBase
         {
             Debug.Log($"[IdleStartingHandler] Sync count: {syncCount}/{registeredDeviceCount}");
         }
+        */
     }
 }

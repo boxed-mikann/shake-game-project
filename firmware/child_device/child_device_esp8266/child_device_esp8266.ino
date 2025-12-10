@@ -18,8 +18,10 @@ int16_t AcX, AcY, AcZ;
 int shakeCount = 0;
 bool isShaking = false;
 
-#define CHILD_ID 5
-uint8_t parentMAC[] = {0x08, 0x3A, 0xF2, 0x52, 0x9E, 0x54};
+#define CHILD_ID 8
+// ★ 親機MACアドレス（メインと予備の2台に対応）
+uint8_t parentMAC_main[] = {0x08, 0x3A, 0xF2, 0x52, 0x9E, 0x54};  // メイン親機
+uint8_t parentMAC_backup[] = {0xB0, 0xA7, 0x32, 0x81, 0xE4, 0x04};  // 予備親機
 
 // ★ ベクトル内積判定用（シェイク状態時のみ使用）
  int16_t prevAcX = 0, prevAcY = 0, prevAcZ = 0;  // 前フレーム加速度
@@ -203,8 +205,11 @@ void setup() {
   esp_now_register_send_cb(OnDataSent);
   esp_now_register_recv_cb(OnDataRecv);
   
-  // ★ 親機を登録
-  esp_now_add_peer(parentMAC, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+  // ★ メイン親機を登録
+  esp_now_add_peer(parentMAC_main, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
+  
+  // ★ 予備親機を登録
+  esp_now_add_peer(parentMAC_backup, ESP_NOW_ROLE_SLAVE, 1, NULL, 0);
   
 #ifdef DEBUG
   Serial.print("Accel Range: ±");
@@ -321,8 +326,11 @@ void loop() {
     shakeData.shakeCount = shakeCount;
     shakeData.acceleration = currentAccel;
     
-    // ★ ESP-NOW で親機に送信
-    esp_now_send(parentMAC, (uint8_t *)&shakeData, sizeof(shakeData));
+    // ★ ESP-NOW で両親機に送信（ブロードキャスト）
+    // メイン親機に送信
+    esp_now_send(parentMAC_main, (uint8_t *)&shakeData, sizeof(shakeData));
+    // 予備親機に送信
+    esp_now_send(parentMAC_backup, (uint8_t *)&shakeData, sizeof(shakeData));
     
 #ifdef DEBUG
     Serial.print(">>> SHAKE! ID: ");

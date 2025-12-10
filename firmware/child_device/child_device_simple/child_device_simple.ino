@@ -11,8 +11,10 @@ int16_t AcX, AcY, AcZ;
 int shakeCount = 0;
 bool isShaking = false;
 
-#define CHILD_ID 0
-uint8_t parentMAC[] = {0x08, 0x3A, 0xF2, 0x52, 0x9E, 0x54};
+#define CHILD_ID 9
+// ★ 親機MACアドレス（メインと予備の2台に対応）
+uint8_t parentMAC_main[] = {0x08, 0x3A, 0xF2, 0x52, 0x9E, 0x54};  // メイン親機
+uint8_t parentMAC_backup[] = {0xB0, 0xA7, 0x32, 0x81, 0xE4, 0x04};  // 予備親機
 
 // ★ ベクトル内積判定用（シェイク状態時のみ使用）
 int16_t prevAcX = 0, prevAcY = 0, prevAcZ = 0;  // 前フレーム加速度
@@ -33,14 +35,14 @@ float baseAccel = 0;
                      ACCEL_RANGE == 0x10 ? 4.0 : 8.0)
 
 // ★ 異常値検出用の範囲（g単位で定義、自動スケーリング）
-const float MIN_VALID_G = 0.5;   // 最小: 0.5g（静置時の50%）
+const float MIN_VALID_G = 0.3;   // 最小: 0.3g（静置時の30%）
 const float MAX_VALID_G = 6.0;   // 最大: 6g（通常シェイクの上限）
 const float MIN_VALID_ACCEL = (MIN_VALID_G * 16384.0) / ACCEL_SCALE;  // ±2g時: 8192, ±16g時: 1024
 const float MAX_VALID_ACCEL = (MAX_VALID_G * 16384.0) / ACCEL_SCALE;  // ±2g時: 98304, ±16g時: 12288
 
 // ★ 調整用パラメータ（±2g基準値 / ACCEL_SCALE で自動調整）
 // シェイク検知
-const float JERK_THRESHOLD = 17000.0 / ACCEL_SCALE;      // ジャーク（加速度の変化率）の閾値
+const float JERK_THRESHOLD = 10000.0 / ACCEL_SCALE;      // ジャーク（加速度の変化率）の閾値
 const int DEBOUNCE_DELAY = 0;            // デバウンス用のdelay時間（ms）
 //const int32_t DOT_PRODUCT_THRESHOLD = 0;  // 内積が0以下→振り戻し判定
 const float ACCEL_THRESHOULD = 40000.0 / ACCEL_SCALE;
@@ -189,13 +191,30 @@ void setup() {
   esp_now_register_send_cb(OnDataSent);
   esp_now_register_recv_cb(OnDataRecv);
   
-  memcpy(peerInfo.peer_addr, parentMAC, 6);
-  peerInfo.channel = 0;
-  peerInfo.encrypt = false;
+  // ★ メイン親機を登録
+  esp_now_peer_info_t peerInfo_main;
+  memset(&peerInfo_main, 0, sizeof(esp_now_peer_info_t));
+  memcpy(peerInfo_main.peer_addr, parentMAC_main, 6);
+  peerInfo_main.channel = 0;
+  peerInfo_main.encrypt = false;
   
-  if (esp_now_add_peer(&peerInfo) != ESP_OK) {
+  if (esp_now_add_peer(&peerInfo_main) != ESP_OK) {
 #ifdef DEBUG
-    Serial.println("Failed to add peer");
+    Serial.println("Failed to add main parent");
+#endif
+    return;
+  }
+  
+  // ★ 予備親機を登録
+  esp_now_peer_info_t peerInfo_backup;
+  memset(&peerInfo_backup, 0, sizeof(esp_now_peer_info_t));
+  memcpy(peerInfo_backup.peer_addr, parentMAC_backup, 6);
+  peerInfo_backup.channel = 0;
+  peerInfo_backup.encrypt = false;
+  
+  if (esp_now_add_peer(&peerInfo_backup) != ESP_OK) {
+#ifdef DEBUG
+    Serial.println("Failed to add backup parent");
 #endif
     return;
   }
@@ -311,7 +330,11 @@ void loop() {
     shakeData.shakeCount = shakeCount;
     shakeData.acceleration = currentAccel;
     
-    esp_now_send(parentMAC, (uint8_t *) &shakeData, sizeof(shakeData));
+    // ★ ESP-NOW で両親機に送信
+    // メイン親機に送信
+    esp_now_send(parentMAC_main, (uint8_t *) &shakeData, sizeof(shakeData));
+    // 予備親機に送信
+    esp_now_send(parentMAC_backup, (uint8_t *) &shakeData, sizeof(shakeData));
     
 #ifdef DEBUG
     Serial.print(">>> SHAKE! ID: ");

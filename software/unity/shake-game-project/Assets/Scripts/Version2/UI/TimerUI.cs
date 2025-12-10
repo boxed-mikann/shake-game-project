@@ -77,7 +77,15 @@ public class TimerUI : MonoBehaviour
     {
         if (!isTimerRunning) return;
 
-        elapsedTime += Time.deltaTime;
+        // VideoManager.GetMusicTime()を使用して正確な音楽時間を取得
+        if (VideoManager.Instance != null)
+        {
+            elapsedTime = (float)VideoManager.Instance.GetMusicTime();
+        }
+        else
+        {
+            elapsedTime += Time.deltaTime;
+        }
 
         float remainingTime = timeLimit - elapsedTime;
 

@@ -9,10 +9,13 @@ using UnityEngine;
 [Serializable]
 public class ChartDataV2
 {
+    public string formatVersion; // JSONのformatVersion
+    public int beat; // JSONのbeat (BPMのこと？)
+    
     public string name;
     public int maxBlock;
     public int BPM;
-    public int offset; // ミリ秒
+    public int offset; // サンプル数 (44100Hz想定)
     public List<NoteJson> notes;
 
     // JSONから読み込んだ生データ
@@ -23,7 +26,17 @@ public class ChartDataV2
         public int num;
         public int block;
         public int type; // 1:単ノート, 2:長押し開始
-        public List<NoteJson> notes; // 長押しの終点
+        public List<ChildNoteJson> notes; // 長押しの終点
+    }
+
+    [Serializable]
+    public class ChildNoteJson
+    {
+        public int LPB;
+        public int num;
+        public int block;
+        public int type;
+        // public List<ChildNoteJson> notes; // 再帰構造を削除してシリアライズエラーを回避
     }
 
     // ゲーム用に展開したデータ
@@ -62,6 +75,10 @@ public class ChartDataV2
         gameNotes.Clear();
         if (notes == null) return;
         
+        // BPMの補正
+        if (BPM == 0 && beat > 0) BPM = beat;
+        if (BPM == 0) BPM = 120; // デフォルト
+
         double beatDuration = 60.0 / BPM; // 1拍の長さ（秒）
 
         foreach (var note in notes)
@@ -94,7 +111,7 @@ public class ChartDataV2
         // 時刻順にソート
         gameNotes.Sort((a, b) => a.time.CompareTo(b.time));
         
-        Debug.Log($"[ChartDataV2] 変換完了: {gameNotes.Count}ノーツ（BPM={BPM}, offset={offset/10000.0:F6}秒）");
+        Debug.Log($"[ChartDataV2] 変換完了: {gameNotes.Count}ノーツ（BPM={BPM}, offset={(double)offset/44100.0:F6}秒）");
         if (gameNotes.Count > 0)
         {
             Debug.Log($"[ChartDataV2] 最初のノート: time={gameNotes[0].time:F6}秒, deviceId={gameNotes[0].deviceId}, type={gameNotes[0].noteType}");
@@ -107,9 +124,18 @@ public class ChartDataV2
     private double CalculateTime(NoteJson note, double beatDuration)
     {
         // num / LPB = 拍数
-        // LPBは1拍を何分割するか（LPB=2なら8分音符、LPB=4なら16分音符）
-        double beats = (double)note.num / note.LPB;
-        // offsetは1/10000秒単位 = 0.1ms単位
-        return beats * beatDuration + 0.265;
+        // LPBがない場合は480(標準的な分解能)と仮定
+        int lpb = note.LPB > 0 ? note.LPB : 480;
+        
+        double beats = (double)note.num / lpb;
+        // offsetはサンプル数 (44100Hz想定)
+        return beats * beatDuration + (double)offset / 44100.0;
+    }
+
+    private double CalculateTime(ChildNoteJson note, double beatDuration)
+    {
+        int lpb = note.LPB > 0 ? note.LPB : 480;
+        double beats = (double)note.num / lpb;
+        return beats * beatDuration + (double)offset / 44100.0;
     }
 }

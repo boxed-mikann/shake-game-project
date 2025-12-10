@@ -62,6 +62,63 @@ public class ChartManagerV2 : MonoBehaviour
     }
 
     /// <summary>
+    /// 外部からJSON文字列を指定して譜面をロード（カスタム譜面用）
+    /// </summary>
+    public bool LoadChartFromJson(string jsonContent)
+    {
+        try
+        {
+            if (string.IsNullOrEmpty(jsonContent))
+            {
+                Debug.LogError("[ChartManagerV2] JSON content is empty");
+                return false;
+            }
+
+            // 簡易チェック
+            if (!jsonContent.TrimStart().StartsWith("{"))
+            {
+                Debug.LogError($"[ChartManagerV2] Invalid JSON format: Content does not start with '{{'. Content: {jsonContent.Substring(0, Mathf.Min(50, jsonContent.Length))}...");
+                return false;
+            }
+
+            var newChart = JsonUtility.FromJson<ChartDataV2>(jsonContent);
+            if (newChart == null)
+            {
+                Debug.LogError("[ChartManagerV2] Failed to parse JSON: Result is null");
+                return false;
+            }
+            
+            currentChart = newChart;
+            currentChart.ConvertToGameNotes();
+            BuildDeviceNoteIndex();
+            Debug.Log($"[ChartManagerV2] Custom chart loaded: {currentChart.gameNotes.Count} notes");
+            return true;
+        }
+        catch (System.Exception e)
+        {
+            Debug.LogError($"[ChartManagerV2] Failed to load custom chart: {e.Message}\nStack Trace: {e.StackTrace}");
+            return false;
+        }
+    }
+
+    /// <summary>
+    /// SongDataから譜面をロード
+    /// </summary>
+    public void LoadSong(SongData song)
+    {
+        if (song != null && song.chartJson != null)
+        {
+            LoadChartFromJson(song.chartJson.text);
+        }
+        else
+        {
+            Debug.LogWarning("[ChartManagerV2] SongData or ChartJson is null. Clearing current chart.");
+            currentChart = null;
+            notesByDevice = new Dictionary<int, List<ChartDataV2.GameNote>>();
+        }
+    }
+
+    /// <summary>
     /// デバイスごとのノートインデックスを構築
     /// </summary>
     private void BuildDeviceNoteIndex()

@@ -13,7 +13,7 @@ using UnityEngine;
 /// - 登録済みチE��イス惁E��の提侁E
 /// 
 /// 状態�E移�E�E
-/// 未登録(Unregistered) ↁEシェイク中(ShakingUnregistered) ↁE登録済み(Registered) ↁE登録解除中(Unregistering)
+/// 未登録(Unregistered) ↁEシェイク中(ShakingUnregistered) ↁE登録済み(Registered)
 /// ========================================
 /// </summary>
 public class DeviceRegisterManager : MonoBehaviour
@@ -25,8 +25,7 @@ public class DeviceRegisterManager : MonoBehaviour
     {
         Unregistered,           // 未登録�E�透�E度80%�E�E
         ShakingUnregistered,    // シェイク中�E�透�E度50%�E�E
-        Registered,             // 登録済み�E�透�E度0% - 完�E表示�E�E
-        Unregistering           // 登録解除中�E�徐、E��80%へ�E�E
+        Registered              // 登録済み�E�透�E度0% - 完�E表示�E�E
     }
 
     [Serializable]
@@ -55,13 +54,12 @@ public class DeviceRegisterManager : MonoBehaviour
     [SerializeField] private float opacityUnregistered = 0.8f;    // 未登録時�E透�E度
     [SerializeField] private float opacityShaking = 0.5f;         // シェイク中の透�E度
     [SerializeField] private float opacityRegistered = 0.0f;      // 登録済みの透�E度(完�E表示)
-    [SerializeField] private float unregisteringDuration = 30f;   // 登録解除にかかる時閁E
 
     private Dictionary<string, DeviceIconState> deviceStates = new Dictionary<string, DeviceIconState>();
     private HashSet<string> registeredDevices = new HashSet<string>();
     private bool subscribedToGameManager = false;
 
-    // 公開�Eロパティ�E�登録済みチE��イスのリスチE
+    // 公開プロパティ：登録済みデバイスのリスト
     public IReadOnlyCollection<string> RegisteredDevices => registeredDevices;
     public int RegisteredDeviceCount => registeredDevices.Count;
 
@@ -80,7 +78,7 @@ public class DeviceRegisterManager : MonoBehaviour
 
     private void OnEnable()
     {
-        // 遁E��購読でAwake頁E��に依存しなぁE��ぁE��する
+        // 遅延購読でAwake時に依存しないようにする
         StartCoroutine(EnsureSubscriptions());
     }
 
@@ -124,7 +122,7 @@ public class DeviceRegisterManager : MonoBehaviour
     /// </summary>
     private void OnResisterStart()
     {
-        // // Debug.Log("[DeviceRegisterManager] OnResisterStart called - resetting all registrations");
+        Debug.Log("[DeviceRegisterManager] OnResisterStart called - resetting all registrations");
         ResetAllRegistrations();
     }
 
@@ -156,7 +154,11 @@ public class DeviceRegisterManager : MonoBehaviour
 
     private void Update()
     {
-        // 吁E��バイスの状態を更新
+        // デバイス登録フェーズのみで、デバイスの状態を更新
+        if (GameManagerV2.Instance == null || GameManagerV2.Instance.CurrentGameState != GameManagerV2.GameState.IdleRegister)
+        {
+            return;
+        }
         double currentTime = AudioSettings.dspTime;
         
         foreach (var state in deviceStates.Values)
@@ -166,8 +168,8 @@ public class DeviceRegisterManager : MonoBehaviour
     }
 
     /// <summary>
-    /// シェイク惁E��を受け取り、登録処琁E��行う
-    /// IdleRegisterHandlerから呼び出されめE
+    /// シェイク入力を受け取り、登録処理を行う
+    /// IdleRegisterHandlerから呼び出されます
     /// </summary>
     public void ProcessShake(string deviceId, double timestamp)
     {
@@ -228,17 +230,9 @@ public class DeviceRegisterManager : MonoBehaviour
                 break;
 
             case RegistrationState.Registered:
-                // 登録済み�E�シェイクでタイムアウトタイマ�EをリセチE��
+                // 登録済み状態でシェイクでタイムアウトタイマーをリセット
                 state.stateChangeTime = timestamp;
                 // Debug.Log($"[DeviceRegisterManager] Device {deviceId}: Timeout timer reset");
-                break;
-
-            case RegistrationState.Unregistering:
-                // 登録解除中にシェイク�E��E登録
-                state.state = RegistrationState.ShakingUnregistered;
-                state.consecutiveShakeCount = 1;
-                state.stateChangeTime = timestamp;
-                // Debug.Log($"[DeviceRegisterManager] Device {deviceId}: Unregistering ↁEShakingUnregistered");
                 break;
         }
 
@@ -252,7 +246,7 @@ public class DeviceRegisterManager : MonoBehaviour
         switch (state.state)
         {
             case RegistrationState.ShakingUnregistered:
-                // シェイク中�E�E.3秒無操作で未登録に戻めE
+                // シェイク中で0.3秒無操作で未登録に戻る
                 if (timeSinceStateChange > shakeWindowSeconds)
                 {
                     state.state = RegistrationState.Unregistered;
@@ -264,30 +258,15 @@ public class DeviceRegisterManager : MonoBehaviour
                 break;
 
             case RegistrationState.Registered:
-                // 登録済み�E�E0秒無操作で登録解除開姁E
+                // 登録済み状態で30秒無操作で即座に登録解除
                 if (timeSinceStateChange > timeoutSeconds)
                 {
-                    state.state = RegistrationState.Unregistering;
-                    state.stateChangeTime = currentTime;
-                    // // Debug.Log($"[DeviceRegisterManager] Device {state.deviceId}: Registered ↁEUnregistering");
-                }
-                break;
-
-            case RegistrationState.Unregistering:
-                // 登録解除中�E�E0秒かけて透�E度めE0%に戻ぁE
-                float progress = Mathf.Clamp01((float)(timeSinceStateChange / unregisteringDuration));
-                state.currentOpacity = Mathf.Lerp(opacityRegistered, opacityUnregistered, progress);
-                
-                if (progress >= 1.0f)
-                {
-                    // 登録解除完亁E
                     state.state = RegistrationState.Unregistered;
                     state.stateChangeTime = currentTime;
                     registeredDevices.Remove(state.deviceId);
-                    // Debug.Log($"[DeviceRegisterManager] Device {state.deviceId}: Unregistering ↁEUnregistered (complete)");
+                    UpdateIconOpacity(state);
+                    Debug.Log($"[DeviceRegisterManager] Device {state.deviceId}: Registered → Unregistered (timeout)");
                 }
-                
-                UpdateIconOpacity(state);
                 break;
         }
     }
@@ -300,21 +279,18 @@ public class DeviceRegisterManager : MonoBehaviour
             return;
         }
 
-        // 状態に応じた透�E度を設定！Enregistering以外！E
-        if (state.state != RegistrationState.Unregistering)
+        // 状態に応じた透明度を設定
+        switch (state.state)
         {
-            switch (state.state)
-            {
-                case RegistrationState.Unregistered:
-                    state.currentOpacity = opacityUnregistered;
-                    break;
-                case RegistrationState.ShakingUnregistered:
-                    state.currentOpacity = opacityShaking;
-                    break;
-                case RegistrationState.Registered:
-                    state.currentOpacity = opacityRegistered;
-                    break;
-            }
+            case RegistrationState.Unregistered:
+                state.currentOpacity = opacityUnregistered;
+                break;
+            case RegistrationState.ShakingUnregistered:
+                state.currentOpacity = opacityShaking;
+                break;
+            case RegistrationState.Registered:
+                state.currentOpacity = opacityRegistered;
+                break;
         }
 
         // SpriteRendererのアルファ値を更新
@@ -328,7 +304,7 @@ public class DeviceRegisterManager : MonoBehaviour
     }
 
     /// <summary>
-    /// 持E��したデバイスが登録済みかどぁE��を判宁E
+    /// デバイスが登録済みかどうかを判定
     /// </summary>
     public bool IsDeviceRegistered(string deviceId)
     {
@@ -336,7 +312,7 @@ public class DeviceRegisterManager : MonoBehaviour
     }
 
     /// <summary>
-    /// チE��イスの現在の状態を取征E
+    /// デバイスの登録状態を取得
     /// </summary>
     public RegistrationState GetDeviceState(string deviceId)
     {
@@ -348,7 +324,7 @@ public class DeviceRegisterManager : MonoBehaviour
     }
 
     /// <summary>
-    /// すべてのチE��イスの登録をリセチE��
+    /// すべてのデバイスの登録をリセット
     /// </summary>
     public void ResetAllRegistrations()
     {
@@ -362,7 +338,7 @@ public class DeviceRegisterManager : MonoBehaviour
             UpdateIconOpacity(state);
         }
         
-        // Debug.Log("[DeviceRegisterManager] All registrations reset");
+        Debug.Log("[DeviceRegisterManager] All registrations reset");
     }
 
 }
